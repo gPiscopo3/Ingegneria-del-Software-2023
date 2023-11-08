@@ -1,0 +1,3 @@
+from CommunicationLogic import *
+
+getissues()
