@@ -2,7 +2,7 @@ import json
 import requests
 from datetime import datetime
 
-GITHUB_TOKEN = "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"
+GITHUB_TOKEN = "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"
 
 
 def get_commits_since(date, owner, repo_name):
@@ -12,5 +12,6 @@ def get_commits_since(date, owner, repo_name):
     repos = requests.get("https://api.github.com/repos/" + owner + "/" + repo_name + "/commits?since=" +
                          formatted_date_str,
                          headers=header)
-    out = json.loads(repos.text)
-    print(json.dumps(out, indent=1))
+    out = repos.json()
+    sha_hashes = [commit['sha'] for commit in out]
+    return sha_hashes
