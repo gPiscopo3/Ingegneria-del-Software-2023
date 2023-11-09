@@ -5,8 +5,5 @@ from model.Communication import Communication
 
 class User:
     def __init__(self, username):
-        self.username = username
-        self.comms: Dict[datetime, Communication] = {}
-
-    def __str__(self):
-        return self.username
+        self.username: str = username
+        self.communications: Dict[datetime, Communication] = {}
