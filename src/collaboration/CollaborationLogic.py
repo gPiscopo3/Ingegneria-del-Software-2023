@@ -4,9 +4,29 @@ from src.model.User import User
 from src.model.User import create_user
 from src.model.File import File
 import requests
+from itertools import combinations
 
-GITHUB_TOKEN = "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"
+
+GITHUB_TOKEN = "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"
 HEADER = {"Authorization": "Bearer " + GITHUB_TOKEN}
+
+
+def create_association(date_start: str, date_end: str, files):
+    result = []  # lista di archi
+    for file in files:
+        collaborators = set()
+        for commit_date, author in file.modifiedBy.items():
+            if date_start <= commit_date < date_end:
+                collaborators.add(author)
+        """if len(collaborators) > 0:
+            for user in collaborators:
+                print(user.username)
+        print("")"""
+        if len(collaborators) > 1:
+            tutte_le_coppie = list(combinations(collaborators, 2))
+            result.append(tutte_le_coppie)
+        #result.append((file.getId(), collaborators))
+    return result
 
 
 def get_collaborations_since(date: str, owner: str, repo_name: str):
@@ -60,4 +80,15 @@ def get_collaborations_since(date: str, owner: str, repo_name: str):
             continue
 
     for file in used_files:
-        print(f"Identifier: {file.identifier}, ModifiedBy: {file.modifiedBy}")
+        print(f"Identifier: {file.identifier}")
+        for commit_date, author in file.modifiedBy.items():
+            print("ModifiedBy: " + commit_date + "author: " + author.username)
+        print("")
+
+    coppie = create_association("2023-11-04T16:38:52Z", "2023-11-14T16:38:52Z", used_files)
+    #print(coppie)
+    for coppia in coppie:
+        tuple = coppia[0]
+        print(tuple[0].username)
+        print(tuple[1].username)
+        print("")
