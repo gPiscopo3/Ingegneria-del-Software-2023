@@ -1,92 +1,94 @@
 from src.model.User import User
 from src.model.Communication import Communication
 from typing import Dict, Set
+from datetime import datetime
 import requests
-import datetime
 
 
 TOKEN = "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"
 
 
-# TO DO: adattarla bene alle pull requests, per ora prende solo i commenti e non va bene
-# con le issue funziona bene
-def get_communications(owner: str, repo_name: str, communication_type: str):
+def get_communications(owner: str, repo_name: str, starting_date: datetime, token: str):
+    all_users: Dict[int, User] = {}
+    header = {"Authorization": "Bearer " + token}
 
-    # conterrà tutti gli utenti che hanno avuto comunicazioni in una qualsiasi issue
-    # in pratica, conterrà tutti i nodi del grafo
-    all_users: Dict[str, User] = {}
-
-    # è un buffer che serve a tener traccia degli utenti che hanno commentato, viene pulito per ogni issue
-    previous_comments_usernames: Set[str] = set()
-
-    starting_date = (datetime.datetime.now() - datetime.timedelta(days=7))
-    header = {"Authorization": "Bearer " + TOKEN}
-
-    # prendo tutte le issue di un certo repo che hanno ricevuto commenti negli ultimi 30 giorni, ordinate per data
     response = requests.get(
-        'https://api.github.com/repos/' + owner + '/' + repo_name + '/' + communication_type +
+        'https://api.github.com/repos/' + owner + '/' + repo_name + '/issues' +
         '?state=all&sort=updated&direction=desc&since=' + starting_date.strftime("%Y-%m-%dT%H:%M:%SZ"), headers=header)
-
     if response.status_code == 200:
         for issue in response.json():
-
-            # per ogni issue prendo tutti i commenti, ordinati per data
             response = requests.get(
-                'https://api.github.com/repos/' + owner + '/' + repo_name + '/' + communication_type + '/' +
+                'https://api.github.com/repos/' + owner + '/' + repo_name + '/issues/' +
                 str(issue["number"]) + '/comments?state=all&sort=created&direction=asc', headers=header)
-
             if response.status_code == 200:
-                previous_comments_usernames.clear()
-
-                # booleano che indica se ignorare l'issue perché non è avvenuta nessuna comunicazione
-                # (es. issue senza commenti, issue commentata unicamente dalla persona che l'ha creata)
-                communication_happened = False
-
-                # ignoro le issue senza commenti
-                if len(response.json()) > 0:
-
-                    # se c'è almeno un commento creato da un utente diverso da chi ha creato l'issue salvo l'utente
-                    # sia nel buffer che come nodo del grafo e pongo communication_happened=True
-                    issue_creator = issue["user"]["login"]
-                    for comment in response.json():
-                        if comment["user"]["login"] != issue_creator:
-                            communication_happened = True
-                            if all_users.get(issue_creator) is None:
-                                all_users[issue_creator] = User(issue_creator)
-                            previous_comments_usernames.add(issue_creator)
-                            break
-
-                if communication_happened:
-                    for comment in response.json():
-                        created_date = datetime.datetime.strptime(comment["created_at"], "%Y-%m-%dT%H:%M:%SZ")
-
-                        # per ogni commento mi salvo l'utente che lo ha generato
-                        comment_author = comment["user"]["login"]
-                        if all_users.get(comment_author) is None:
-                            all_users[comment_author] = User(comment_author)
-
-                        # solo se il commento è creato nell'ultimo mese e se c'è almeno un commento precedente
-                        # controllo e salvo le comunicazioni generate dal commento
-                        if created_date >= starting_date:
-                            communication = Communication(all_users[comment_author], created_date, communication_type)
-                            # questo ciclo serve a cancellare la comunicazione dell'autore del commento con se stesso
-                            for username in previous_comments_usernames:
-                                if username != comment_author:
-                                    communication.receivers.append(all_users[username])
-                            # se la comunicazione non ha ricevitori (es. commento a se stessi) non la salvo
-                            if len(communication.receivers) > 0:
-                                all_users[comment_author].communications[created_date] = communication
-
-                        previous_comments_usernames.add(comment_author)
-
+                comments = reformat_response(response.json(), "created_at")
+                comments = dict(sorted(comments.items()))
+                if communication_happened(comments, issue["user"]["id"]):
+                    update_communications(comments, all_users, starting_date, "issue", issue["user"])
             else:
                 print(response.status_code)
-
     else:
         print(response.status_code)
 
-    # per ogni utente ordina le comunicazioni dalla più recente alla più vecchia
+    """
+    response = requests.get(
+        'https://api.github.com/repos/' + owner + '/' + repo_name + '/pulls' +
+        '?state=all&sort=updated&direction=desc&since=' + starting_date.strftime("%Y-%m-%dT%H:%M:%SZ"), headers=header)
+    if response.status_code == 200:
+        for pull in response.json():
+            response_comments = requests.get(
+                'https://api.github.com/repos/' + owner + '/' + repo_name + '/pulls/' +
+                str(pull["number"]) + '/comments?state=all&sort=created&direction=asc', headers=header)
+            response_reviews = requests.get(
+                'https://api.github.com/repos/' + owner + '/' + repo_name + '/pulls/' +
+                str(pull["number"]) + '/reviews?state=all&sort=created&direction=asc', headers=header)
+            if response_comments.status_code == 200 and response_reviews.status_code == 200:
+                comments = reformat_response(response_comments.json(), "created_at")
+                reviews = reformat_response(response_reviews.json(), "submitted_at")
+                buffer = comments | reviews
+                buffer = dict(sorted(buffer.items()))
+                if communication_happened(buffer, pull["user"]["id"]):
+                    update_communications(buffer, all_users, starting_date, "pull", pull["user"])
+            else:
+                print(str(response_comments.status_code) + ' ' + str(response_reviews.status_code))
+    else:
+        print(response.status_code)
+    """
+
     for key in all_users:
         all_users[key].communications = dict(sorted(all_users[key].communications.items(), reverse=True))
-
     return all_users
+
+
+def reformat_response(response: dict, date_key: str):
+    buffer = dict()
+    for element in response:
+        buffer[datetime.strptime(element[date_key], "%Y-%m-%dT%H:%M:%SZ")] = element['user']
+    return buffer
+
+
+def communication_happened(response: dict, id_creator: str):
+    if len(response) > 0:
+        for date, author in response.items():
+            if author["id"] != id_creator:
+                return True
+    return False
+
+
+def update_communications(response: dict, all_users: Dict[int, User], starting_date: datetime, comm_type: str,
+                          creator: dict):
+    previous_users_ids: Set[int] = set()
+    if all_users.get(creator["id"]) is None:
+        all_users[creator["id"]] = User(creator["id"], creator["login"])
+    previous_users_ids.add(creator["id"])
+    for created_date, author in response.items():
+        if all_users.get(author["id"]) is None:
+            all_users[author["id"]] = User(author["id"], author["login"])
+        if created_date >= starting_date:
+            communication = Communication(all_users[author["id"]], created_date, comm_type)
+            for user_id in previous_users_ids:
+                if user_id != author["id"]:
+                    communication.receivers.append(all_users[user_id])
+            if len(communication.receivers) > 0:
+                all_users[author["id"]].communications[created_date] = communication
+        previous_users_ids.add(author["id"])

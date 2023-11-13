@@ -6,7 +6,7 @@ from src.model.Communication import Communication
 class User:
     def __init__(self, identifier, username):
         self.username: str = username
-        self.identifier = identifier
+        self.identifier: str = identifier
         self.communications: Dict[datetime, Communication] = {}
 
     def to_string(self):
