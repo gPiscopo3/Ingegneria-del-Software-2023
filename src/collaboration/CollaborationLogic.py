@@ -7,7 +7,7 @@ import requests
 from itertools import combinations
 
 
-GITHUB_TOKEN = "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"
+GITHUB_TOKEN = "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"
 HEADER = {"Authorization": "Bearer " + GITHUB_TOKEN}
 
 
@@ -26,7 +26,8 @@ def create_association(date_start: str, date_end: str, files):
             tutte_le_coppie = list(combinations(collaborators, 2))
             result.append(tutte_le_coppie)
         #result.append((file.getId(), collaborators))
-    return result
+
+    return list(set(tuple(sorted(coppia)) for coppia in result))
 
 
 def get_collaborations_since(date: str, owner: str, repo_name: str):
@@ -82,7 +83,7 @@ def get_collaborations_since(date: str, owner: str, repo_name: str):
     for file in used_files:
         print(f"Identifier: {file.identifier}")
         for commit_date, author in file.modifiedBy.items():
-            print("ModifiedBy: " + commit_date + "author: " + author.username)
+            print("ModifiedBy: " + commit_date + " author: " + author.username)
         print("")
 
     coppie = create_association("2023-11-04T16:38:52Z", "2023-11-14T16:38:52Z", used_files)
