@@ -1,30 +1,23 @@
-from typing import List
 from CommunicationLogic import *
 from datetime import datetime, timedelta
 
 
-TOKEN = "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"
+TOKEN = "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"
 
 
-all_users = get_communications("fullmoonlullaby", "test", datetime.now() - timedelta(days=7), TOKEN)
+all_users: Dict[int, User] = get_communications("apache", "commons-io", datetime.now() - timedelta(days=30), TOKEN)
 
-for key in all_users:
-    print("Sender: " + all_users[key].username)
-    if len(all_users[key].communications) > 0:
-        for key2, value in all_users[key].communications.items():
-            print(key2)
-            receivers: List[User] = value.receivers
-            for r in receivers:
-                print(r.username)
-    print("")
+for user_id, user in all_users.items():
+    user.print_communications()
+
 
 def communications_in_time_lapse(start: datetime, end: datetime):
     adjacency_map: Dict[User, Set[User]] = dict()
     for key, sender in all_users.items():
         adjacency_map[sender] = set()
-        for date, communication in sender.communications.items():
+        for date, receivers in sender.communications.items():
             if start <= date <= end:
-                adjacency_map[sender].update(communication.receivers)
+                adjacency_map[sender].update(receivers)
     return adjacency_map
 
 
