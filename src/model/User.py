@@ -8,6 +8,14 @@ class User:
         self.identifier: str = identifier
         self.communications: Dict[datetime, Set[User]] = {}
 
+    def sort_communications(self):
+        self.communications = dict(sorted(self.communications.items(), reverse=True))
+
+    def update_communication(self, date: datetime, receivers: set):
+        if date not in self.communications:
+            self.communications[date] = set()
+        self.communications[date] = self.communications[date] | receivers
+
     def print_communications(self):
         print("Sender: " + self.username)
         print(" ")
@@ -18,12 +26,5 @@ class User:
             print(" ")
         print("-------")
 
-    def to_string(self):
+    def __str__(self):
         return "User: [identifier= " + str(self.identifier) + ", username= " + self.username + "]"
-
-
-def create_user(identifier, username):
-    if identifier is not None and username is not None:
-        return User(identifier, username)
-    else:
-        return User("void", "void")
