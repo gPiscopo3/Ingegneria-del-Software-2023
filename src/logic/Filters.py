@@ -16,13 +16,19 @@ def communications_in_range(start: datetime, end: datetime, users: List[User]):
 
 
 def collaborations_in_range(start: datetime, end: datetime, files: List[File]):
-    edges = []
+    edges = []  # Lista per memorizzare tutte le collaborazioni come tuple di autori
+
     for file in files:
-        collaborators = set()
+        collaborators = set()  # Insieme per memorizzare gli autori che hanno collaborato su questo file
+
+        # Itera attraverso ogni data di commit e l'autore associato
         for commit_date, author in file.modifiedBy.items():
             if start <= commit_date <= end:
                 collaborators.add(author)
+
         if len(collaborators) > 1:
-            all_pairs = list(combinations(collaborators, 2))
-            edges.append(all_pairs)
-    return list(set(tuple(sorted(coppia)) for coppia in edges))
+            all_pairs = list(combinations(collaborators, 2))  # Crea tutte le possibili coppie di collaboratori
+            edges.append(all_pairs)  # Aggiungi le coppie alla lista delle collaborazioni
+
+    return list(set(tuple(sorted(coppia)) for coppia in edges))  # Restituisci la lista di tutte le collaborazioni come tuple ordinate
+
