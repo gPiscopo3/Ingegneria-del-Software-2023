@@ -6,17 +6,23 @@ from src.model.User import User
 class File:
     def __init__(self, identifier):
         self.identifier: str = identifier
-        self.modifiedBy: Dict[datetime, User] = {}
+        self.modified_by: Dict[datetime, User] = {}
 
     def add_edit(self, date, author):
-        self.modifiedBy[date] = author
+        self.modified_by[date] = author
 
     def sort_edits(self):
-        self.modifiedBy = dict(sorted(self.modifiedBy.items(), reverse=True))
+        self.modified_by = dict(sorted(self.modified_by.items(), reverse=True))
+
+    def print_edits(self):
+        print(self.identifier)
+        for date, author in self.modified_by.items():
+            print(date.strftime("%Y-%m-%dT%H:%M:%SZ") + " - " + author.username)
+        print("-------")
 
     def __str__(self):
         return "File: [identifier= " + self.identifier + ", ModifiedBy={" + ";".join([f"{chiave}: {valore}" for chiave,
-                    valore in self.modifiedBy.items()]) + "}]"
+            valore in self.modified_by.items()]) + "}]"
 
     def __eq__(self, other):
         if isinstance(other, File):
@@ -24,4 +30,4 @@ class File:
         return False
 
     def __hash__(self):
-        return hash((self.identifier, self.modifiedBy))
+        return hash((self.identifier, self.modified_by))
