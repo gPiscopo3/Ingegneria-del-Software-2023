@@ -1,15 +1,37 @@
-# This is a sample Python script.
+import networkx as nx
+from matplotlib import pyplot as plt
 
-# Press Maiusc+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+from logic.APICalls import get_communications_since, get_collaborations_since
+import datetime as dt
 
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+8 to toggle the breakpoint.
+from logic.Filters import collaborations_in_range
 
+datainizio = dt.datetime(2023, 10, 27)
+datai = dt.datetime(2023, 10, 27)
+dataf = dt.datetime(2023, 11, 27)
 
-# Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    print_hi('PyCharm')
+    # utenti= get_communications_since("apache", "commons-io", datainizio, "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")
+    # print(utenti)
+    files = get_collaborations_since("apache", "commons-io", datainizio, "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")
+    print(files)
+    collaborations = collaborations_in_range(datai, dataf, files)
+    for tupla in collaborations:
+        for a in tupla:
+            print(a[0], a[1])
+            print()
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+    # Creazione di un grafo non diretto
+    G = nx.Graph()
+
+    # Aggiunta degli utenti come nodi
+    for tupla in collaborations:
+        for a in tupla:
+            G.add_edge(a[0].username, a[1].username)
+
+    # Disegno del grafo
+    pos = nx.spring_layout(G)  # Layout per il disegno
+    nx.draw(G, pos, with_labels=True, font_weight='bold', node_color='skyblue', edge_color='gray')
+
+    # Mostrare il grafo
+    plt.show()

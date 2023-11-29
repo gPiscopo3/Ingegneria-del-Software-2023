@@ -15,9 +15,10 @@ def communications_in_range(start: datetime, end: datetime, users: List[User]):
     return adjacency_map
 
 
-def collaborations_in_range(start: datetime, end: datetime, files: List[File]):
+def collaborations_in_range(start: datetime, end: datetime, files):
     edges = []
-    for file in files:
+    for sha, file in files.items():
+
         collaborators = set()
         for commit_date, author in file.modified_by.items():
             if start <= commit_date <= end:
@@ -25,4 +26,7 @@ def collaborations_in_range(start: datetime, end: datetime, files: List[File]):
         if len(collaborators) > 1:
             all_pairs = list(combinations(collaborators, 2))
             edges.append(all_pairs)
-    return list(set(tuple(sorted(coppia)) for coppia in edges))
+    return set(tuple(coppia) for coppia in edges)
+
+
+
