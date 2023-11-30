@@ -1,8 +1,8 @@
 from datetime import datetime
 from itertools import combinations
 from typing import List, Dict, Set
-from model.File import File
-from model.User import User
+from src.model.File import File
+from src.model.User import User
 
 
 def communications_in_range(start: datetime, end: datetime, users: List[User]):
@@ -18,7 +18,6 @@ def communications_in_range(start: datetime, end: datetime, users: List[User]):
 def collaborations_in_range(start: datetime, end: datetime, files):
     edges = []
     for sha, file in files.items():
-
         collaborators = set()
         for commit_date, author in file.modified_by.items():
             if start <= commit_date <= end:
