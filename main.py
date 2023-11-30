@@ -1,10 +1,12 @@
 import networkx as nx
 from matplotlib import pyplot as plt
+from datetime import datetime
+from datetime import timedelta
 
-from logic.APICalls import get_communications_since, get_collaborations_since
+from src.logic.DataManagement import get_collaborations_since
 import datetime as dt
 
-from logic.Filters import collaborations_in_range
+from src.logic.Filters import collaborations_in_range
 
 datainizio = dt.datetime(2023, 10, 27)
 datai = dt.datetime(2023, 10, 27)
@@ -13,9 +15,9 @@ dataf = dt.datetime(2023, 11, 27)
 if __name__ == '__main__':
     # utenti= get_communications_since("apache", "commons-io", datainizio, "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")
     # print(utenti)
-    files = get_collaborations_since("apache", "commons-io", datainizio, "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")
+    files = get_collaborations_since("tensorflow", "tensorflow", datetime.now() - timedelta(days=2), token)
     print(files)
-    collaborations = collaborations_in_range(datai, dataf, files)
+    collaborations = collaborations_in_range(datetime.now()-timedelta(days=2), datetime.now(), files)
     for tupla in collaborations:
         for a in tupla:
             print(a[0], a[1])

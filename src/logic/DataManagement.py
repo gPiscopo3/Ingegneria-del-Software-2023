@@ -1,8 +1,8 @@
-from model.File import File
+from src.model.File import File
 from src.model.User import User
 from typing import Dict, Set
 from datetime import datetime
-from logic import APICalls
+from src.logic import APICalls
 
 
 def get_communications_since(owner: str, repo_name: str, starting_date: datetime, token: str):

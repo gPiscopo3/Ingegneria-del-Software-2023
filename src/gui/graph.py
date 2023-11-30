@@ -3,8 +3,8 @@ from datetime import datetime
 
 from matplotlib.backends.backend_template import FigureCanvas
 
-from logic.APICalls import get_collaborations_since
-from logic.Filters import collaborations_in_range
+from src.logic.DataManagement import get_collaborations_since
+from src.logic.Filters import collaborations_in_range
 
 
 def create_graph(owner: str, repo_name: str, starting_date: datetime, token: str, datai: datetime, dataf: datetime):
