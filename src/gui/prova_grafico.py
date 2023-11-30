@@ -1,8 +1,8 @@
 import sys
 
 from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QWidget, QMainWindow, QVBoxLayout, QPushButton, QGraphicsScene, QGraphicsView, QMessageBox, \
-    QApplication
+from PyQt6.QtWidgets import (QWidget, QMainWindow, QVBoxLayout, QPushButton, QGraphicsScene, QGraphicsView, \
+                             QMessageBox, QApplication, QLineEdit, QFormLayout)
 
 from widget_calendar import CalendarioApp  # Assicurati che il nome del file sia corretto
 
@@ -10,6 +10,11 @@ import datetime as dt
 
 from src.gui.graph import GraphWidget, create_graph
 
+TOKEN = ""
+
+
+def init_graph():
+    print("Inizialied")
 
 
 class GraphViewer(QMainWindow):
@@ -17,13 +22,24 @@ class GraphViewer(QMainWindow):
         super().__init__()
 
         self.graph_widget = None
-        self.setWindowTitle('Graph Viewer')
+        self.setWindowTitle('Grafo delle collaborazioni')
         self.setGeometry(100, 100, 800, 600)
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
 
         self.layout = QVBoxLayout(self.central_widget)
+
+        # Input Box - Owner, Repository Name, Token
+        self.owner = QLineEdit()
+        self.repo_name = QLineEdit()
+        self.token = QLineEdit()
+
+        form = QFormLayout()
+        form.addRow("Repository owner", self.owner)
+        form.addRow("Repository name", self.repo_name)
+        form.addRow("Github token", self.token)
+        self.layout.addLayout(form)
 
         # Calendario per selezionare l'intervallo temporale
         self.calendario_widget = CalendarioApp()
@@ -40,26 +56,20 @@ class GraphViewer(QMainWindow):
         self.layout.addWidget(self.view)
 
         # Chiamata a una funzione di esempio per inizializzare il grafico
-        self.init_graph()
-
-    def init_graph(self):
-        # In questa funzione, dovresti inizializzare il tuo grafico
-        # e aggiungerlo alla scena. Questo è solo un esempio di grafico.
-        # Puoi sostituire questa parte con la logica del tuo grafico reale.
-        self.scene.addText('Grafico di collaborazione', font=QFont("Arial", 16))
-
-        datainizio = dt.datetime(2023, 11, 28)
-        datai = dt.datetime(2023, 11, 28)
-        dataf = dt.datetime(2023, 11, 30)
-        G = create_graph("tensorflow", "tensorflow", datainizio, token, datai, dataf)
-        self.graph_widget = GraphWidget(G)
-        self.layout.addWidget(self.graph_widget)
+        init_graph()
 
     def update_graph(self):
-        # Funzione chiamata quando l'utente preme il pulsante "Aggiorna Grafico"
-        # Qui dovresti aggiornare il grafico in base all'intervallo temporale selezionato
+        datainizio = dt.datetime(2023, 11, 28)
         data_inizio = self.calendario_widget.date_edit_inizio.date()
         data_fine = self.calendario_widget.date_edit_fine.date()
+
+        g = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio, data_fine)
+        self.graph_widget = GraphWidget(g)
+        self.layout.addWidget(self.graph_widget)
+        # Funzione chiamata quando l'utente preme il pulsante "Aggiorna Grafico"
+        # Qui dovresti aggiornare il grafico in base all'intervallo temporale selezionato
+
+        print()
 
         if data_inizio <= data_fine:
             QMessageBox.information(self, 'Selezione Confermata',
@@ -71,7 +81,7 @@ class GraphViewer(QMainWindow):
         # Qui dovresti aggiornare il tuo grafico in base alle date selezionate
         # Ad esempio, puoi rimuovere gli elementi precedenti dalla scena e aggiungere quelli nuovi.
         self.scene.clear()  # Rimuove gli elementi precedenti dalla scena
-        self.init_graph()  # Aggiorna il grafico con i nuovi dati
+        init_graph()  # Aggiorna il grafico con i nuovi dati
 
 
 def main():
