@@ -1,8 +1,9 @@
-
+from PyQt6.QtWidgets import QWidget, QVBoxLayout
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+import networkx as nx
 from datetime import datetime
-
 from matplotlib.backends.backend_template import FigureCanvas
-
 from src.logic.DataManagement import get_collaborations_since
 from src.logic.Filters import collaborations_in_range
 
@@ -10,6 +11,7 @@ from src.logic.Filters import collaborations_in_range
 def create_graph(owner: str, repo_name: str, starting_date: datetime, token: str, datai: datetime, dataf: datetime):
     files = get_collaborations_since(owner, repo_name, starting_date, token)
     collaborations = collaborations_in_range(datai, dataf, files)
+    print(collaborations)
 
     # Creazione di un grafo non diretto
     G = nx.Graph()
@@ -21,11 +23,6 @@ def create_graph(owner: str, repo_name: str, starting_date: datetime, token: str
 
     return G
 
-
-from PyQt6.QtWidgets import QWidget, QVBoxLayout
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-import networkx as nx
 
 class GraphWidget(QWidget):
     def __init__(self, G):
@@ -39,7 +36,7 @@ class GraphWidget(QWidget):
 
         # Creazione della figura per il grafo
         fig, ax = plt.subplots()
-        canvas = FigureCanvas(fig)
+        canvas = FigureCanvasQTAgg(fig)
         layout.addWidget(canvas)
 
         # Disegno del grafo sulla figura
