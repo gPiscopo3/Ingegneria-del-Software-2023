@@ -7,13 +7,12 @@ from PyQt6.QtCore import QDate, Qt
 class CalendarioApp(QWidget):
     def __init__(self):
         super().__init__()
-
+        self.date_edit_fine = None
+        self.date_edit_inizio = None
         self.initUI()
-
 
     def initUI(self):
         self.setWindowTitle('Seleziona Intervallo Temporale')
-
 
         # Layout principale
         layout = QVBoxLayout()
@@ -37,6 +36,3 @@ class CalendarioApp(QWidget):
 
         layout.addLayout(form_layout)
         self.setLayout(layout)
-
-
-
