@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 import networkx as nx
 from datetime import datetime
-from matplotlib.backends.backend_template import FigureCanvas
 from src.logic.DataManagement import get_collaborations_since
 from src.logic.Filters import collaborations_in_range
 
