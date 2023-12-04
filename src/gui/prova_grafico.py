@@ -10,7 +10,9 @@ import datetime as dt
 
 from src.gui.graph import GraphWidget, create_graph
 
-TOKEN = ""
+TOKEN = "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"
+
+
 
 
 def init_graph():
@@ -18,6 +20,9 @@ def init_graph():
 
 
 class GraphViewer(QMainWindow):
+    previous_owner = ""
+    previous_repo = ""
+    files = dict()
     def __init__(self):
         super().__init__()
 
@@ -59,17 +64,11 @@ class GraphViewer(QMainWindow):
         init_graph()
 
     def update_graph(self):
-        datainizio = dt.datetime(2023, 11, 28)
+        if self.graph_widget is not None:
+            self.layout.removeWidget(self.graph_widget)
+        datainizio = dt.datetime(2023, 12, 2)
         data_inizio = self.calendario_widget.date_edit_inizio.date()
         data_fine = self.calendario_widget.date_edit_fine.date()
-
-        g = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio, data_fine)
-        self.graph_widget = GraphWidget(g)
-        self.layout.addWidget(self.graph_widget)
-        # Funzione chiamata quando l'utente preme il pulsante "Aggiorna Grafico"
-        # Qui dovresti aggiornare il grafico in base all'intervallo temporale selezionato
-
-        print()
 
         if data_inizio <= data_fine:
             QMessageBox.information(self, 'Selezione Confermata',
@@ -78,10 +77,24 @@ class GraphViewer(QMainWindow):
             QMessageBox.warning(self, 'Errore di Selezione',
                                 'La data di inizio deve essere inferiore o uguale alla data di fine.')
 
+        if self.owner.text().__eq__(self.previous_owner) and self.repo_name.text().__eq__(self.previous_repo):
+            g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio, data_fine,
+                             self.files)
+        else:
+            g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio,
+                                         data_fine, None)
+        self.graph_widget = GraphWidget(g)
+        self.layout.addWidget(self.graph_widget)
+        # Funzione chiamata quando l'utente preme il pulsante "Aggiorna Grafico"
+        # Qui dovresti aggiornare il grafico in base all'intervallo temporale selezionato
+
+        print()
+
         # Qui dovresti aggiornare il tuo grafico in base alle date selezionate
         # Ad esempio, puoi rimuovere gli elementi precedenti dalla scena e aggiungere quelli nuovi.
-        self.scene.clear()  # Rimuove gli elementi precedenti dalla scena
         init_graph()  # Aggiorna il grafico con i nuovi dati
+        self.previous_owner = self.owner.text()
+        self.previous_repo = self.repo_name.text()
 
 
 def main():
