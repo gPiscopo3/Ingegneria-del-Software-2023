@@ -3,7 +3,7 @@ from datetime import datetime
 from datetime import timedelta
 
 
-TOKEN = "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"
+TOKEN = "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"
 
 users = DataManagement.get_communications_since("fullmoonlullaby", "test", datetime.today() -
                                                 timedelta(days=30), TOKEN)
@@ -13,7 +13,7 @@ for user in users.values():
 
 
 files = DataManagement.get_collaborations_since("fullmoonlullaby", "test", datetime.today() -
-                                                timedelta(days=7), TOKEN)
+                                                timedelta(days=14), TOKEN)
 
 for file in files.values():
     file.print_edits()
