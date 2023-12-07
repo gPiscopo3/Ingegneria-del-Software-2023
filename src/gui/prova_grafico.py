@@ -10,9 +10,7 @@ import datetime as dt
 
 from src.gui.graph import GraphWidget, create_graph
 
-TOKEN = "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"
-
-
+TOKEN = "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"
 
 
 def init_graph():
@@ -23,6 +21,7 @@ class GraphViewer(QMainWindow):
     previous_owner = ""
     previous_repo = ""
     files = dict()
+
     def __init__(self):
         super().__init__()
 
@@ -47,7 +46,8 @@ class GraphViewer(QMainWindow):
         self.layout.addLayout(form)
 
         # Calendario per selezionare l'intervallo temporale
-        self.calendario_widget = CalendarioApp()
+        self.datainizio = dt.datetime(2023, 12, 5)
+        self.calendario_widget = CalendarioApp(self.datainizio)
         self.layout.addWidget(self.calendario_widget)
 
         # Pulsante per aggiornare il grafico in base all'intervallo selezionato
@@ -66,7 +66,7 @@ class GraphViewer(QMainWindow):
     def update_graph(self):
         if self.graph_widget is not None:
             self.layout.removeWidget(self.graph_widget)
-        datainizio = dt.datetime(2023, 12, 2)
+        datainizio = self.datainizio
         data_inizio = self.calendario_widget.date_edit_inizio.date()
         data_fine = self.calendario_widget.date_edit_fine.date()
 
@@ -78,8 +78,9 @@ class GraphViewer(QMainWindow):
                                 'La data di inizio deve essere inferiore o uguale alla data di fine.')
 
         if self.owner.text().__eq__(self.previous_owner) and self.repo_name.text().__eq__(self.previous_repo):
-            g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio, data_fine,
-                             self.files)
+            g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio,
+                                         data_fine,
+                                         self.files)
         else:
             g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio,
                                          data_fine, None)
@@ -87,10 +88,9 @@ class GraphViewer(QMainWindow):
         self.scene.addWidget(self.graph_widget)
         scene_rect = self.scene.sceneRect()
         print(scene_rect)
-        #width = int(scene_rect.width())
-        #height = int(scene_rect.height())
+        # width = int(scene_rect.width())
+        # height = int(scene_rect.height())
         self.graph_widget.setFixedSize(1550, 580)
-
 
         print()
 
