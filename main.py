@@ -1,39 +1,8 @@
-import networkx as nx
-from matplotlib import pyplot as plt
-from datetime import datetime
-from datetime import timedelta
+from APICalls import get_collaborations_since
 
-from src.logic.DataManagement import get_collaborations_since
-import datetime as dt
-
-from src.logic.Filters import collaborations_in_range
-
-datainizio = dt.datetime(2023, 10, 27)
-datai = dt.datetime(2023, 10, 27)
-dataf = dt.datetime(2023, 11, 27)
-
+# Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    # utenti= get_communications_since("apache", "commons-io", datainizio, "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")
-    # print(utenti)
-    files = get_collaborations_since("tensorflow", "tensorflow", datetime.now() - timedelta(days=2), token)
-    print(files)
-    collaborations = collaborations_in_range(datetime.now()-timedelta(days=2), datetime.now(), files)
-    for tupla in collaborations:
-        for a in tupla:
-            print(a[0], a[1])
-            print()
 
-    # Creazione di un grafo non diretto
-    G = nx.Graph()
+    files = get_collaborations_since('2023-11-09T00:00:00Z', 'apache', 'commons-io',
+                                     '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')
 
-    # Aggiunta degli utenti come nodi
-    for tupla in collaborations:
-        for a in tupla:
-            G.add_edge(a[0].username, a[1].username)
-
-    # Disegno del grafo
-    pos = nx.spring_layout(G)  # Layout per il disegno
-    nx.draw(G, pos, with_labels=True, font_weight='bold', node_color='skyblue', edge_color='gray')
-
-    # Mostrare il grafo
-    plt.show()

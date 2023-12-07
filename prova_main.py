@@ -4,7 +4,7 @@ from datetime import datetime
 from datetime import timedelta
 from collections import Counter
 
-token = ""
+token = "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"
 
 files = get_collaborations_since("tensorflow", "tensorflow", datetime.now() - timedelta(days=2), token)
 result = collaborations_in_range(datetime.now() - timedelta(days=2), datetime.now(), files)
