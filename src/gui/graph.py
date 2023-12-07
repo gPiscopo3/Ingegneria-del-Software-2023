@@ -7,8 +7,9 @@ from src.logic.DataManagement import get_collaborations_since
 from src.logic.Filters import collaborations_in_range
 
 
-def create_graph(owner: str, repo_name: str, starting_date: datetime, token: str, datai: datetime, dataf: datetime):
-    files = get_collaborations_since(owner, repo_name, starting_date, token)
+def create_graph(owner: str, repo_name: str, starting_date: datetime, token: str, datai: datetime, dataf: datetime, files: dict):
+    if files is None:
+        files = get_collaborations_since(owner, repo_name, starting_date, token)
     collaborations = collaborations_in_range(datai, dataf, files)
     print(collaborations)
 
@@ -20,7 +21,9 @@ def create_graph(owner: str, repo_name: str, starting_date: datetime, token: str
         for a in tupla:
             G.add_edge(a[0].username, a[1].username)
 
-    return G
+    return G, files
+
+
 
 
 class GraphWidget(QWidget):
@@ -39,8 +42,8 @@ class GraphWidget(QWidget):
         layout.addWidget(canvas)
 
         # Disegno del grafo sulla figura
-        pos = nx.spring_layout(G)  # Puoi cambiare l'algoritmo di posizionamento a seconda delle tue esigenze
-        nx.draw(G, pos, with_labels=True, font_weight='bold', ax=ax)
+        pos = nx.circular_layout(G, scale=3)  # Puoi cambiare l'algoritmo di posizionamento a seconda delle tue esigenze
+        nx.draw(G, pos, with_labels=True, font_weight='bold', ax=ax, node_size=300, node_color='skyblue')
 
         # Aggiunta del canvas al layout
         layout.addWidget(canvas)
