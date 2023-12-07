@@ -56,7 +56,7 @@ class GraphWidget(QWidget):
 
         # Disegno del grafo sulla figura
         pos = nx.spring_layout(G, scale=1.0, k=0.9)
-        nx.draw(G, pos, with_labels=True,  ax=ax, node_size=100, node_color='skyblue', font_size=8)
+        nx.draw(G, pos, with_labels=True,  ax=ax, node_size=170, node_color='skyblue', font_size=8)
         nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)  # Aggiungi etichette degli archi
 
         # Aggiunta del canvas al layout
