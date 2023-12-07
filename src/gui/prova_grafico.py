@@ -10,7 +10,7 @@ import datetime as dt
 
 from src.gui.graph import GraphWidget, create_graph
 
-TOKEN = "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"
+TOKEN = "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"
 
 
 
@@ -84,9 +84,13 @@ class GraphViewer(QMainWindow):
             g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio,
                                          data_fine, None)
         self.graph_widget = GraphWidget(g)
-        self.layout.addWidget(self.graph_widget)
-        # Funzione chiamata quando l'utente preme il pulsante "Aggiorna Grafico"
-        # Qui dovresti aggiornare il grafico in base all'intervallo temporale selezionato
+        self.scene.addWidget(self.graph_widget)
+        scene_rect = self.scene.sceneRect()
+        print(scene_rect)
+        #width = int(scene_rect.width())
+        #height = int(scene_rect.height())
+        self.graph_widget.setFixedSize(1550, 580)
+
 
         print()
 
