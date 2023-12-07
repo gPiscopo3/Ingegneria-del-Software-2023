@@ -25,7 +25,7 @@ def collaborations_in_range(start: datetime, end: datetime, files):
         if len(collaborators) > 1:
             all_pairs = list(combinations(collaborators, 2))
             edges.append(all_pairs)
-    return set(tuple(coppia) for coppia in edges)
+    return edges
 
 
 
