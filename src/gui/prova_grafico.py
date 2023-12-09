@@ -10,7 +10,7 @@ import datetime as dt
 
 from src.gui.graph import GraphWidget, create_graph
 
-TOKEN = "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"
+TOKEN = "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"
 
 
 def init_graph():
