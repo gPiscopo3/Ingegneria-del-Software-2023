@@ -25,7 +25,7 @@ def get_issues_since(owner: str, repo_name: str, starting_date: datetime, token:
 
 def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: str):
     header = {"Authorization": "Bearer " + token}
-    query_string = "?state=all&per-page=100&since=" + starting_date.strftime(DATE_FORMAT)
+    query_string = "?per-page=100&since=" + starting_date.strftime(DATE_FORMAT)
     pull_requests = []
     results = get_multiple_pages(BASE_URL + owner + '/' + repo_name + '/pulls' + query_string, header)
     for pull in results:
@@ -36,7 +36,7 @@ def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: 
         urls.append(BASE_URL + owner + '/' + repo_name + '/pulls/' + str(pull["number"]) + '/reviews?per_page=100')
         for key, url in pull["_links"].items():
             if key == "comments" or key == "review_comments" or key == "commits":
-                urls.append(url["href"] + '?per_page=100')
+                urls.append(url["href"] + '?per_page=100&since=' + starting_date.strftime(DATE_FORMAT))
 
         # get su ogni url dei precedenti e fa un "merge" delle risposte, ordinandole per data
         replies = dict()
@@ -89,9 +89,9 @@ def get_multiple_pages(url: str, header: Dict[str, str]):
 def get_with_ratelimit(url: str, header: Dict[str, str], limit: int):
     response = requests.get(url, headers=header)
     # se raggiungo il ratelimit, metto in sleep fino a che non si resetta
-    if int(response.headers.get("x-ratelimit-remaining")) <= limit:
+    if int(response.headers.get("X-RateLimit-Remaining")) <= limit:
         now_timestamp = int(time.mktime(datetime.now().timetuple()))
-        time.sleep(int(response.headers.get("x-ratelimit-reset")) - now_timestamp)
+        time.sleep(int(response.headers.get("X-RateLimit-Reset")) - now_timestamp)
     return response
 
 
