@@ -5,6 +5,8 @@ from datetime import datetime
 import requests
 import time
 
+from src.logic.Pull_issue_request import pulls_json, get_with_ratelimit
+
 DATE_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 BASE_URL = 'https://api.github.com/repos/'
 
@@ -25,9 +27,8 @@ def get_issues_since(owner: str, repo_name: str, starting_date: datetime, token:
 
 def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: str):
     header = {"Authorization": "Bearer " + token}
-    query_string = "?per-page=100&since=" + starting_date.strftime(DATE_FORMAT)
     pull_requests = []
-    results = get_multiple_pages(BASE_URL + owner + '/' + repo_name + '/pulls' + query_string, header)
+    results = pulls_json(owner, repo_name, starting_date, token)
     for pull in results:
 
         # vengono presi gli url per accedere a comments, reviews, review comments e commits di una pull request
@@ -86,13 +87,7 @@ def get_multiple_pages(url: str, header: Dict[str, str]):
 
 
 # richieste get con sleep integrato nel caso si raggiunga il ratelimit
-def get_with_ratelimit(url: str, header: Dict[str, str], limit: int):
-    response = requests.get(url, headers=header)
-    # se raggiungo il ratelimit, metto in sleep fino a che non si resetta
-    if int(response.headers.get("X-RateLimit-Remaining")) <= limit:
-        now_timestamp = int(time.mktime(datetime.now().timetuple()))
-        time.sleep(int(response.headers.get("X-RateLimit-Reset")) - now_timestamp)
-    return response
+
 
 
 # riformatta ogni commento/commit/review in un dictionary con coppie <data: autore>

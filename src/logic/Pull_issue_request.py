@@ -1,7 +1,7 @@
 from datetime import datetime
+import time
 import requests
 from requests.utils import parse_header_links
-from src.logic.APICalls import get_with_ratelimit
 
 import requests
 
@@ -26,3 +26,12 @@ def pulls_json(owner: str, repo_name: str, starting_date: datetime, token: str):
                 if link['rel'] == 'next' and ultima_data > starting_date:
                     url = link['url']
     return results
+
+
+def get_with_ratelimit(url: str, header, limit: int):
+    response = requests.get(url, headers=header)
+    # se raggiungo il ratelimit, metto in sleep fino a che non si resetta
+    if int(response.headers.get("X-RateLimit-Remaining")) <= limit:
+        now_timestamp = int(time.mktime(datetime.now().timetuple()))
+        time.sleep(int(response.headers.get("X-RateLimit-Reset")) - now_timestamp)
+    return response
