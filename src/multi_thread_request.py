@@ -5,7 +5,7 @@ import time
 import threading
 import math
 
-TOKEN = "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"
+TOKEN = "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"
 header = {"Authorization": "Bearer " + TOKEN}
 dt = datetime.datetime(2023, 11, 12)
 

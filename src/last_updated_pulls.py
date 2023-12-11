@@ -3,7 +3,7 @@ import datetime
 from src.logic.APICalls import get_multiple_pages, reformat_response
 import time
 
-TOKEN = "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"
+TOKEN = "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"
 header = {"Authorization": "Bearer " + TOKEN}
 
 # Start timer
