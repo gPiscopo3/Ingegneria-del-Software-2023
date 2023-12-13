@@ -1,26 +1,26 @@
 import sys
 
-from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (QWidget, QMainWindow, QVBoxLayout, QPushButton, QGraphicsScene, QGraphicsView, \
                              QMessageBox, QApplication, QLineEdit, QFormLayout)
 
-from widget_calendar import CalendarioApp  # Assicurati che il nome del file sia corretto
+from widget_calendar import CalendarioApp
 
 import datetime as dt
+from src.gui.graph import create_graph, GraphWidget, create_graph_communication
 
-from src.gui.graph import GraphWidget, create_graph
-
-TOKEN = "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"
+TOKEN = "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"
 
 
 def init_graph():
     print("Inizialied")
 
 
-class GraphViewer(QMainWindow):
+class MainViewer(QMainWindow):
     previous_owner = ""
     previous_repo = ""
     files = dict()
+    users = dict()
+    tipo_grafo = "collab"
 
     def __init__(self):
         super().__init__()
@@ -46,7 +46,7 @@ class GraphViewer(QMainWindow):
         self.layout.addLayout(form)
 
         # Calendario per selezionare l'intervallo temporale
-        self.datainizio = dt.datetime(2023, 12, 5)
+        self.datainizio = dt.datetime(2023, 12, 6)
         self.calendario_widget = CalendarioApp(self.datainizio)
         self.layout.addWidget(self.calendario_widget)
 
@@ -78,24 +78,40 @@ class GraphViewer(QMainWindow):
                                 'La data di inizio deve essere inferiore o uguale alla data di fine.')
 
         if self.owner.text().__eq__(self.previous_owner) and self.repo_name.text().__eq__(self.previous_repo):
-            g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio,
-                                         data_fine,
-                                         self.files)
+            if self.tipo_grafo == 'collab':
+                g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio,
+                                             data_fine,
+                                             self.files)
+                self.graph_widget = GraphWidget(g, 1)
+
+            elif self.tipo_grafo == 'comm':
+                g, self.users = create_graph_communication(self.owner.text(), self.repo_name.text(), datainizio, TOKEN,
+                                                           data_inizio, data_fine, self.users)
+                self.graph_widget = GraphWidget(g, 2)
+
+            # elif self.tipo == 'composite':
+            # creazione grafo composito
+            # creazione widget
+            # return 'self.graph_widget'
+
         else:
-            g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio,
-                                         data_fine, None)
-        self.graph_widget = GraphWidget(g)
+            if self.tipo_grafo == 'collab':
+                g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio,
+                                             data_fine, None)
+                self.graph_widget = GraphWidget(g, 1)
+
+            elif self.tipo_grafo == 'comm':
+                g, self.users = create_graph_communication(self.owner.text(), self.repo_name.text(), datainizio, TOKEN,
+                                                           data_inizio, data_fine, None)
+                self.graph_widget = GraphWidget(g, 2)
+
+            # elif self.tipo == 'composite':
+            # creazione grafo composito
+            # creazione widget
+            # return 'self.graph_widget'
         self.scene.addWidget(self.graph_widget)
-        scene_rect = self.scene.sceneRect()
-        print(scene_rect)
-        # width = int(scene_rect.width())
-        # height = int(scene_rect.height())
         self.graph_widget.setFixedSize(1550, 580)
 
-        print()
-
-        # Qui dovresti aggiornare il tuo grafico in base alle date selezionate
-        # Ad esempio, puoi rimuovere gli elementi precedenti dalla scena e aggiungere quelli nuovi.
         init_graph()  # Aggiorna il grafico con i nuovi dati
         self.previous_owner = self.owner.text()
         self.previous_repo = self.repo_name.text()
@@ -103,7 +119,7 @@ class GraphViewer(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    viewer = GraphViewer()
+    viewer = MainViewer()
     viewer.show()
     sys.exit(app.exec())
 

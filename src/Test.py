@@ -18,7 +18,7 @@ files = DataManagement.get_collaborations_since("fullmoonlullaby", "test", datet
 for file in files.values():
     file.print_edits()
 '''
-
+'''
 from logic import DataManagement
 
 import datetime
@@ -36,3 +36,28 @@ edges = collaborations_in_range(datetime.datetime(2023, 11, 18),
 for edge in edges:
     for user in edge:
         print(user[0].username, user[1].username)
+'''
+
+
+import networkx as nx
+import matplotlib.pyplot as plt
+
+# Creazione del primo grafo
+G1 = nx.Graph()
+G1.add_edges_from([(1, 2), (2, 3)])
+
+# Creazione del secondo grafo
+G2 = nx.Graph()
+G2.add_edges_from([(3, 4), (4, 5)])
+
+# Composizione dei due grafi
+G_compose = nx.compose(G1, G2)
+
+# Visualizzazione del grafo composto
+pos = nx.spring_layout(G_compose)
+nx.draw(G_compose, pos, with_labels=True, font_weight='bold', node_color='skyblue', edge_color='gray', width=2)
+
+# Visualizza il grafo composto
+plt.show()
+
+
