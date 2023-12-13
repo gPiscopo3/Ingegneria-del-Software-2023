@@ -5,13 +5,14 @@ from src.model.File import File
 from src.model.User import User
 
 
-def communications_in_range(start: datetime, end: datetime, users: List[User]):
-    adjacency_map: Dict[User, Set[User]] = dict()
-    for sender in users:
-        adjacency_map[sender] = set()
+def communications_in_range(start: datetime, end: datetime, users):
+    adjacency_map: Dict[User, List[User]] = dict()
+    for sender in users.values():
+        adjacency_map[sender] = list()
         for date, receivers in sender.communications.items():
             if start <= date <= end:
-                adjacency_map[sender].update(receivers)
+                for rec in receivers:
+                    adjacency_map[sender].append(rec)
     return adjacency_map
 
 
@@ -26,6 +27,3 @@ def collaborations_in_range(start: datetime, end: datetime, files):
             all_pairs = list(combinations(collaborators, 2))
             edges.append(all_pairs)
     return edges
-
-
-

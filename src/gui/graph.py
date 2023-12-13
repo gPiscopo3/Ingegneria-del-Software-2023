@@ -1,12 +1,12 @@
 from collections import Counter
-
+from typing import Dict
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 import networkx as nx
 from datetime import datetime
-from src.logic.DataManagement import get_collaborations_since
-from src.logic.Filters import collaborations_in_range
+from src.logic.DataManagement import get_collaborations_since, get_communications_since
+from src.logic.Filters import collaborations_in_range, communications_in_range
 
 
 def create_graph(owner: str, repo_name: str, starting_date: datetime, token: str, datai: datetime, dataf: datetime,
@@ -14,7 +14,7 @@ def create_graph(owner: str, repo_name: str, starting_date: datetime, token: str
     if files is None:
         files = get_collaborations_since(owner, repo_name, starting_date, token)
     collaborations = collaborations_in_range(datai, dataf, files)
-    print(collaborations)
+    # print(collaborations)
 
     lista_trasformata = [
         [tuple(sorted((coppia[0], coppia[1]), key=lambda x: x.username)) for coppia in lista]
@@ -37,6 +37,23 @@ def create_graph(owner: str, repo_name: str, starting_date: datetime, token: str
     return G, files
 
 
+def create_graph_communication(owner: str, repo_name: str, starting_date: datetime, token: str, datai: datetime,
+                               dataf: datetime, all_users):
+    if all_users is None:
+        all_users = get_communications_since(owner, repo_name, starting_date, token)
+    communications = communications_in_range(datai, dataf, all_users)  # mappa di adiacenza : Dict[User, List[User]]
+    lista_archi_diretti = create_directed_edges(communications)
+    conteggi_totali = Counter(lista_archi_diretti)
+    G = nx.Graph()
+    for coppia, conteggio in conteggi_totali.items():
+
+        if conteggio > 0:
+            G.add_edge(coppia[0].username, coppia[1].username, weight=conteggio)
+            #print(f"{coppia[0].username, coppia[1].username}: {conteggio} volte")
+
+    return G, all_users
+
+
 class GraphWidget(QWidget):
     def __init__(self, G):
         super().__init__()
@@ -56,8 +73,17 @@ class GraphWidget(QWidget):
 
         # Disegno del grafo sulla figura
         pos = nx.spring_layout(G, scale=1.0, k=0.9)
-        nx.draw(G, pos, with_labels=True,  ax=ax, node_size=170, node_color='skyblue', font_size=8)
+        nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, node_color='skyblue', font_size=8)
         nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)  # Aggiungi etichette degli archi
 
         # Aggiunta del canvas al layout
         layout.addWidget(canvas)
+
+
+def create_directed_edges(adj_map: Dict):
+    edges = []
+    for user, list_user in adj_map.items():
+        for receiver in list_user:
+            tup = (user, receiver)
+            edges.append(tup)
+    return edges
