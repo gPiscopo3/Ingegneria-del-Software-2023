@@ -44,23 +44,24 @@ def create_graph_communication(owner: str, repo_name: str, starting_date: dateti
     communications = communications_in_range(datai, dataf, all_users)  # mappa di adiacenza : Dict[User, List[User]]
     lista_archi_diretti = create_directed_edges(communications)
     conteggi_totali = Counter(lista_archi_diretti)
-    G = nx.Graph()
+    G = nx.DiGraph()
     for coppia, conteggio in conteggi_totali.items():
 
         if conteggio > 0:
             G.add_edge(coppia[0].username, coppia[1].username, weight=conteggio)
-            #print(f"{coppia[0].username, coppia[1].username}: {conteggio} volte")
+            print(f"{coppia[0].username, coppia[1].username}: {conteggio} volte")
 
     return G, all_users
 
 
+
 class GraphWidget(QWidget):
-    def __init__(self, G):
+    def __init__(self, G, flag: int):
         super().__init__()
 
-        self.initUI(G)
+        self.initUI(G, flag)
 
-    def initUI(self, G):
+    def initUI(self, G, flag):
         # Creazione di un layout verticale per il widget
         layout = QVBoxLayout(self)
 
@@ -72,10 +73,13 @@ class GraphWidget(QWidget):
         labels = nx.get_edge_attributes(G, 'weight')
 
         # Disegno del grafo sulla figura
-        pos = nx.spring_layout(G, scale=1.0, k=0.9)
-        nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, node_color='skyblue', font_size=8)
-        nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)  # Aggiungi etichette degli archi
-
+        pos = nx.circular_layout(G, scale=1.0)
+        if flag == 1:
+            nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, node_color='skyblue', font_size=8)
+            nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)  # Aggiungi etichette degli archi
+        if flag == 2:
+            nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, node_color='skyblue', font_size=8, connectionstyle='arc3, rad = 0.1')
+            nx.draw_networkx_edge_labels(G, pos, edge_labels=labels, font_size=8, label_pos=0.4)  # Aggiungi etichette degli archi
         # Aggiunta del canvas al layout
         layout.addWidget(canvas)
 
