@@ -54,14 +54,13 @@ def create_graph_communication(owner: str, repo_name: str, starting_date: dateti
     return G, all_users
 
 
-
 class GraphWidget(QWidget):
-    def __init__(self, G, flag: int):
+    def __init__(self, G, flag: int, edge_color: []):
         super().__init__()
 
-        self.initUI(G, flag)
+        self.initUI(G, flag, edge_color)
 
-    def initUI(self, G, flag):
+    def initUI(self, G, flag, edge_color):
         # Creazione di un layout verticale per il widget
         layout = QVBoxLayout(self)
 
@@ -78,11 +77,42 @@ class GraphWidget(QWidget):
             nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, node_color='skyblue', font_size=8)
             nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)  # Aggiungi etichette degli archi
         if flag == 2:
-            nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, node_color='skyblue', font_size=8, connectionstyle='arc3, rad = 0.1')
-            nx.draw_networkx_edge_labels(G, pos, edge_labels=labels, font_size=8, label_pos=0.4)  # Aggiungi etichette degli archi
+            nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, node_color='skyblue', font_size=8,
+                    connectionstyle='arc3, rad = 0.1')
+            nx.draw_networkx_edge_labels(G, pos, edge_labels=labels, font_size=8,
+                                         label_pos=0.4)  # Aggiungi etichette degli archi
+        if flag == 3:
+            nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, edge_color=edge_color, font_size=8)
         # Aggiunta del canvas al layout
         layout.addWidget(canvas)
 
+
+def create_composite_graph(owner: str, repo_name: str, starting_date: datetime, token: str, datai: datetime,
+                           dataf: datetime,
+                           files: dict, all_users):
+    g1, files = create_graph(owner, repo_name, starting_date, token, datai, dataf,
+                             files)
+    g2, all_users = create_graph_communication(owner, repo_name, starting_date, token, datai,
+                                               dataf, all_users)
+
+    g2 = g2.to_undirected()
+
+    merged_graph = nx.compose(g1, g2)
+
+    # Assegna colori diversi agli archi di g1 e g2
+    edge_colors = []
+    for edge in merged_graph.edges:
+        if edge in g1.edges and edge in g2.edges:
+            # Arco presente in entrambi i grafi
+            edge_colors.append('purple')
+        elif edge in g1.edges:
+            # Arco presente solo in g1
+            edge_colors.append('blue')
+        elif edge in g2.edges:
+            # Arco presente solo in g2
+            edge_colors.append('red')
+
+    return merged_graph, files, all_users, edge_colors
 
 def create_directed_edges(adj_map: Dict):
     edges = []

@@ -13,7 +13,7 @@ BASE_URL = 'https://api.github.com/repos/'
 
 def get_issues_since(owner: str, repo_name: str, starting_date: datetime, token: str):
     header = {"Authorization": "Bearer " + token}
-    query_string = "?state=all&per-page=100&since=" + starting_date.strftime(DATE_FORMAT)
+    query_string = "?state=all&per_page=60&since=" + starting_date.strftime(DATE_FORMAT)
     issues = []
     results = get_multiple_pages(BASE_URL + owner + '/' + repo_name + '/issues' + query_string, header)
     for issue in results:
@@ -71,7 +71,7 @@ def get_multiple_pages(url: str, header: Dict[str, str]):
     results = []
     try:
         while url:
-            response = get_with_ratelimit(url, header, 99)
+            response = get_with_ratelimit(url, header, 0)
             response.raise_for_status()
             results.extend(response.json())
             url = None
