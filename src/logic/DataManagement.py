@@ -14,11 +14,11 @@ def get_communications_since(owner: str, repo_name: str, starting_date: datetime
         if communication_happened(pull):
             update_communications(pull, all_users, starting_date)
 
-    # issues
-    # results = APICalls.get_issues_since(owner, repo_name, starting_date, token)
-    # for issue in results:
-    #     if communication_happened(issue):
-    #         update_communications(issue, all_users, starting_date)
+    #issues
+    results = APICalls.get_issues_since(owner, repo_name, starting_date, token)
+    for issue in results:
+        if communication_happened(issue):
+            update_communications(issue, all_users, starting_date)
 
     for key, user in all_users.items():  # ordina per data (discendente) le comunicazioni di ogni utente
         user.sort_communications()
