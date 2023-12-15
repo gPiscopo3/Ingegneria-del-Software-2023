@@ -89,7 +89,6 @@ def get_multiple_pages(url: str, header: Dict[str, str]):
 # richieste get con sleep integrato nel caso si raggiunga il ratelimit
 
 
-
 # riformatta ogni commento/commit/review in un dictionary con coppie <data: autore>
 def reformat_response(response: list):
     buffer = dict()

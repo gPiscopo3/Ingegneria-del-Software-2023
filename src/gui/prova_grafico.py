@@ -8,7 +8,7 @@ from widget_calendar import CalendarioApp
 import datetime as dt
 from src.gui.graph import create_graph, GraphWidget, create_graph_communication, create_composite_graph
 
-TOKEN = "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"
+TOKEN = "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"
 
 
 def init_graph():
@@ -55,7 +55,7 @@ class MainViewer(QMainWindow):
         self.layout.addWidget(self.choice)
 
         # Calendario per selezionare l'intervallo temporale
-        self.datainizio = dt.datetime(2023, 11, 6)
+        self.datainizio = dt.datetime(2023, 11, 15)
         self.calendario_widget = CalendarioApp(self.datainizio)
         self.layout.addWidget(self.calendario_widget)
 

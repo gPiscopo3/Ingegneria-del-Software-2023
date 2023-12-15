@@ -78,7 +78,7 @@ class GraphWidget(QWidget):
             nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)  # Aggiungi etichette degli archi
         if flag == 2:
             nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, node_color='skyblue', font_size=8,
-                    connectionstyle='arc3, rad = 0.1')
+                    connectionstyle='arc3, rad = 0.05')
             nx.draw_networkx_edge_labels(G, pos, edge_labels=labels, font_size=8,
                                          label_pos=0.4)  # Aggiungi etichette degli archi
         if flag == 3:

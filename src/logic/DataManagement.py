@@ -3,25 +3,42 @@ from src.model.User import User
 from typing import Dict, Set
 from datetime import datetime
 from src.logic import APICalls
+import os
+import pickle
 
 
 def get_communications_since(owner: str, repo_name: str, starting_date: datetime, token: str):
     all_users: Dict[int, User] = {}  # conterrà ogni utente che ha comunicato con le sue relative comunicazioni
 
-    # pull requests
-    results = APICalls.get_pulls_since(owner, repo_name, starting_date, token)
-    for pull in results:
-        if communication_happened(pull):
-            update_communications(pull, all_users, starting_date)
+    filename = owner + "_" + repo_name + ".pkl"
+    full_path_di_DataManagement = os.path.abspath(__file__)
+    src_directory = os.path.dirname(os.path.dirname(full_path_di_DataManagement))
+    path_to_search_cache = os.path.join(src_directory, filename)
+    if os.path.exists(path_to_search_cache):
+        with open(path_to_search_cache, 'rb') as fp:
+            while 1:
+                try:
+                    u = pickle.load(fp)
+                    all_users[u.identifier] = u
+                except (EOFError, pickle.UnpicklingError):
+                    break
 
-    #issues
-    results = APICalls.get_issues_since(owner, repo_name, starting_date, token)
-    for issue in results:
-        if communication_happened(issue):
-            update_communications(issue, all_users, starting_date)
+    else:
+        # pull requests
+        results = APICalls.get_pulls_since(owner, repo_name, starting_date, token)
+        for pull in results:
+            if communication_happened(pull):
+                update_communications(pull, all_users, starting_date)
 
-    for key, user in all_users.items():  # ordina per data (discendente) le comunicazioni di ogni utente
-        user.sort_communications()
+        # issues
+        results = APICalls.get_issues_since(owner, repo_name, starting_date, token)
+        for issue in results:
+            if communication_happened(issue):
+                update_communications(issue, all_users, starting_date)
+
+        for key, user in all_users.items():  # ordina per data (discendente) le comunicazioni di ogni utente
+            user.sort_communications()
+        save_all_user(path_to_search_cache, all_users)
 
     return all_users  # dictionary {user_id: user}, in ogni user ci sono tutte le sue comunicazioni
 
@@ -81,3 +98,9 @@ def update_communications(response: dict, all_users: Dict[int, User], starting_d
                 all_users[sender["id"]].update_communication(created_date, receivers)
 
         previous_users_ids.add(sender["id"])  # aggiunge l'autore della risposta nel buffer
+
+
+def save_all_user(filename: str, dizionario_di_utenti):
+    with open(filename, 'wb') as fp:
+        for elem in dizionario_di_utenti.values():
+            pickle.dump(elem, fp)
