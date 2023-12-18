@@ -90,16 +90,6 @@ class GraphWidget(QWidget):
                 plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[label], markersize=10, label=label)
                 for label in legend_labels]
             plt.legend(handles=legend_handles, title="Tipi di collegamenti", loc='upper left')
-            #
-            # # Aggiungi una leggenda statica
-            # legend_x = 1.2  # Posizione x della leggenda
-            # legend_y = 0.9  # Posizione y della leggenda
-            #
-            # for label in legend_labels:
-            #     plt.text(legend_x, legend_y, label, color=colors[label], ha='left', va='center')
-            #     plt.fill_between([legend_x - 0.1, legend_x + 0.1], legend_y - 0.05, legend_y + 0.05,
-            #                      color=colors[label])
-        # Aggiunta del canvas al layout
         layout.addWidget(canvas)
 
 
