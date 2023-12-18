@@ -47,22 +47,37 @@ def get_collaborations_since(owner: str, repo_name: str, starting_date: datetime
     collaborators: Dict[int, User] = {}  # conterrà la lista degli utenti che hanno commitato
     files: Dict[str, File] = {}  # conterrà ogni file presente nei commit e coppie data:autore per ogni modifica
 
-    results = APICalls.get_commits_since(owner, repo_name, starting_date, token)
-    for commit in results:
-        if commit['author'] is not None and "files" in commit:
+    filename = owner + "_" + repo_name + "_collabs.pkl"
+    full_path_di_DataManagement = os.path.abspath(__file__)
+    src_directory = os.path.dirname(os.path.dirname(full_path_di_DataManagement))
+    path_to_search_cache = os.path.join(src_directory, filename)
 
-            if commit['author']['id'] not in collaborators:  # crea l'utente se non è già presente in collaborators
-                collaborators[commit['author']['id']] = User(commit['author']['id'], commit['author']['login'])
+    if os.path.exists(path_to_search_cache):
+        with open(path_to_search_cache, 'rb') as fp:
+            while 1:
+                try:
+                    f = pickle.load(fp)
+                    files[f.identifier] = f
+                except (EOFError, pickle.UnpicklingError):
+                    break
+    else:
+        results = APICalls.get_commits_since(owner, repo_name, starting_date, token)
+        for commit in results:
+            if commit['author'] is not None and "files" in commit:
 
-            for file in commit['files']:
-                if file['filename'] not in files:  # crea il file se non è già presente in files
-                    files[file['filename']] = File(file['filename'])
-                files[file['filename']].add_edit(
-                    datetime.strptime(commit['commit']['author']['date'], "%Y-%m-%dT%H:%M:%SZ"),
-                    collaborators[commit['author']['id']])
+                if commit['author']['id'] not in collaborators:  # crea l'utente se non è già presente in collaborators
+                    collaborators[commit['author']['id']] = User(commit['author']['id'], commit['author']['login'])
 
-    for sha, file in files.items():  # ordina per data (discendente) le modifiche di ogni file
-        file.sort_edits()
+                for file in commit['files']:
+                    if file['filename'] not in files:  # crea il file se non è già presente in files
+                        files[file['filename']] = File(file['filename'])
+                    files[file['filename']].add_edit(
+                        datetime.strptime(commit['commit']['author']['date'], "%Y-%m-%dT%H:%M:%SZ"),
+                        collaborators[commit['author']['id']])
+
+        for sha, file in files.items():  # ordina per data (discendente) le modifiche di ogni file
+            file.sort_edits()
+        save_all_user(path_to_search_cache, files)
 
     return files  # dictionary {file_id: file}, in ogni file ci sono tutte le modifiche avvenute
 
@@ -104,3 +119,9 @@ def save_all_user(filename: str, dizionario_di_utenti):
     with open(filename, 'wb') as fp:
         for elem in dizionario_di_utenti.values():
             pickle.dump(elem, fp)
+
+
+# def save_all_files(filename: str, dizionario_di_file):
+#     with open(filename, 'wb') as fp:
+#         for elem in dizionario_di_file.values():
+#             pickle.dump(elem, fp)
