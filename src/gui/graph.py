@@ -25,10 +25,10 @@ def create_graph(owner: str, repo_name: str, starting_date: datetime, token: str
 
     G = nx.Graph()
 
-    print("Occorrenze delle coppie di oggetti:")
+    # print("Occorrenze delle coppie di oggetti:")
     for coppia, conteggio in conteggi_totali.items():
 
-        if conteggio > 1:
+        if conteggio > 0:
             G.add_edge(coppia[0].username, coppia[1].username, weight=conteggio)
             print(f"{coppia[0].username, coppia[1].username}: {conteggio} volte")
 
@@ -82,7 +82,23 @@ class GraphWidget(QWidget):
             nx.draw_networkx_edge_labels(G, pos, edge_labels=labels, font_size=8,
                                          label_pos=0.4)  # Aggiungi etichette degli archi
         if flag == 3:
+            #labels = ['comunicazioni', 'collaborazioni', 'entrambe']
             nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, edge_color=edge_color, font_size=8)
+            legend_labels = ['Comunicazioni', 'Collaborazioni', 'Composito']
+            colors = {'Comunicazioni': 'red', 'Collaborazioni': 'blue', 'Composito': 'purple'}
+            legend_handles = [
+                plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[label], markersize=10, label=label)
+                for label in legend_labels]
+            plt.legend(handles=legend_handles, title="Tipi di collegamenti", loc='upper left')
+            #
+            # # Aggiungi una leggenda statica
+            # legend_x = 1.2  # Posizione x della leggenda
+            # legend_y = 0.9  # Posizione y della leggenda
+            #
+            # for label in legend_labels:
+            #     plt.text(legend_x, legend_y, label, color=colors[label], ha='left', va='center')
+            #     plt.fill_between([legend_x - 0.1, legend_x + 0.1], legend_y - 0.05, legend_y + 0.05,
+            #                      color=colors[label])
         # Aggiunta del canvas al layout
         layout.addWidget(canvas)
 
@@ -113,6 +129,7 @@ def create_composite_graph(owner: str, repo_name: str, starting_date: datetime, 
             edge_colors.append('red')
 
     return merged_graph, files, all_users, edge_colors
+
 
 def create_directed_edges(adj_map: Dict):
     edges = []

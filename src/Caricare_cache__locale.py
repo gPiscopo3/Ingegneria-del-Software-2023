@@ -1,12 +1,41 @@
 import datetime
 import os
-from src.logic.DataManagement import get_communications_since
+from src.logic.DataManagement import get_communications_since, get_collaborations_since
 from src.logic.Filters import communications_in_range
 import pickle
 
-TOKEN = "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"
+TOKEN = "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"
 header = {"Authorization": "Bearer " + TOKEN}
 dt = datetime.datetime(2023, 12, 13)
+
+# collab_locali = get_collaborations_since("apache", "commons-io", dt, TOKEN)
+# for file_id, file in collab_locali.items():
+#     print(file.identifier, "modificato da")
+#     for data, autore in file.modified_by.items():
+#         print(autore.username, "in data ", data)
+#     print()
+# print(len(list(collab_locali.values())))
+
+print("********")
+collab_locali2 = {}
+with open('apache_commons-io_collabs.pkl', 'rb') as fp:
+    while 1:
+        try:
+            f = pickle.load(fp)
+            collab_locali2[f.identifier] = f
+        except (EOFError, pickle.UnpicklingError):
+            break
+
+for file_id, file in collab_locali2.items():
+    print(file.identifier, "modificato da")
+    for data, autore in file.modified_by.items():
+        print(autore.username, "in data ", data)
+    print()
+print(len(list(collab_locali2.values())))
+
+# with open('apache_commons-io_collab.pkl', 'wb') as fp:
+#     for file in collab_locali.values():
+#         pickle.dump(file, fp)
 
 #print(os.path.abspath(__file__))
 
@@ -29,9 +58,9 @@ dt = datetime.datetime(2023, 12, 13)
 
 # print(os.path.exists("C:\Users\pc\OneDrive\Desktop\Ingegneria-del-Software-2023\src\apache_commons-io.pkl"))
 
-comm_locali = get_communications_since("tensorflow", "tensorflow", dt, TOKEN)
-for ident, us in comm_locali.items():
-    print(ident, us)
+# comm_locali = get_communications_since("tensorflow", "tensorflow", dt, TOKEN)
+# for ident, us in comm_locali.items():
+#     print(ident, us)
 # print(len(list(comm_locali.values())))
 
 
