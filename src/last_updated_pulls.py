@@ -1,6 +1,5 @@
-from src.logic.Pull_issue_request import pulls_json
 import datetime
-from src.logic.APICalls import get_multiple_pages, reformat_response
+from src.logic.APICalls import pulls_json
 import time
 
 TOKEN = "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"
