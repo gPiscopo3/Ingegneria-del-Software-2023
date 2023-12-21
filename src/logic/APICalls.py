@@ -27,7 +27,8 @@ def get_issues_since(owner: str, repo_name: str, starting_date: datetime, token:
 def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: str):
     header = {"Authorization": "Bearer " + token}
     pull_requests = []
-    results = pulls_json(owner, repo_name, starting_date, token)
+    query_string = "?state=all&sort=created&direction=desc&per_page=3"
+    results = filter_pulls_by_date(BASE_URL + owner + '/' + repo_name + '/pulls' + query_string, header, starting_date)
     for pull in results:
 
         # vengono presi gli url per accedere a comments, reviews, review comments e commits di una pull request
@@ -51,35 +52,37 @@ def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: 
 
 def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token: str):
     header = {"Authorization": "Bearer " + token}
-    query_string = "?per-page=100&since=" + starting_date.strftime(DATE_FORMAT)
-    commits = []
-    results = get_multiple_pages(BASE_URL + owner + '/' + repo_name + '/commits' + query_string, header)
-    for commit in results:
-        try:
-            response = get_with_ratelimit(commit["url"], header, 0)
-            commits.append(response.json())
-        except HTTPError as e:
-            print(e.response.text)
+    query_string = "?per_page=100"
+    commits = []  # lista dove saranno contenuti, mischiati, i commit di ogni branch
+    response = get_multiple_pages(BASE_URL + owner + '/' + repo_name + '/branches' + query_string, header)
+    query_string += "&since=" + starting_date.strftime(DATE_FORMAT)
+    for branch in response:  # prendo tutti i branch
+        response = get_multiple_pages(BASE_URL + owner + '/' + repo_name + '/commits' + query_string + "&sha=" +
+                                      branch["commit"]["sha"], header)
+        for commit in response:  # per ogni branch prendo tutti i commit
+            try:
+                response = get_with_ratelimit(commit["url"], header)
+                response.raise_for_status()
+                commits.append(response.json())
+            except HTTPError as e:
+                print(e.response.text)
     return commits  # lista di dictionary
 
 
 # funzioni "private" delle funzioni di sopra
 
 # ritorna la lista delle pulls filtrando per data
-def pulls_json(owner: str, repo_name: str, starting_date: datetime, token: str):
-    header = {"Authorization": "Bearer " + token}
-    query_string = "?sort=created&direction=desc&per_page=3"
-    url = BASE_URL + owner + '/' + repo_name + '/pulls' + query_string
+def filter_pulls_by_date(url: str, header: Dict[str, str], starting_date: datetime):
     results = []
     while url:
-        response = get_with_ratelimit(url, header, 0)
+        response = get_with_ratelimit(url, header)
         results.extend(response.json())
         url = None
         if 'Link' in response.headers:
             links = requests.utils.parse_header_links(response.headers['Link'])
             for link in links:
-                ultima_data = datetime.strptime(response.json()[-1]["created_at"], DATE_FORMAT)
-                if link['rel'] == 'next' and ultima_data > starting_date:
+                last_date = datetime.strptime(response.json()[-1]["created_at"], DATE_FORMAT)
+                if link['rel'] == 'next' and last_date > starting_date:
                     url = link['url']
     return results
 
@@ -89,7 +92,7 @@ def get_multiple_pages(url: str, header: Dict[str, str]):
     results = []
     try:
         while url:
-            response = get_with_ratelimit(url, header, 0)
+            response = get_with_ratelimit(url, header)
             response.raise_for_status()
             results.extend(response.json())
             url = None
@@ -105,10 +108,10 @@ def get_multiple_pages(url: str, header: Dict[str, str]):
 
 
 # richieste get con sleep integrato nel caso si raggiunga il ratelimit
-def get_with_ratelimit(url: str, header: Dict[str, str], limit: int):
+def get_with_ratelimit(url: str, header: Dict[str, str]):
     response = requests.get(url, headers=header)
     # se raggiungo il ratelimit, metto in sleep fino a che non si resetta
-    if int(response.headers.get("X-RateLimit-Remaining")) <= limit:
+    if int(response.headers.get("X-RateLimit-Remaining")) <= 0:
         now_timestamp = int(time.mktime(datetime.now().timetuple()))
         time.sleep(int(response.headers.get("X-RateLimit-Reset")) - now_timestamp)
     return response
