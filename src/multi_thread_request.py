@@ -1,5 +1,5 @@
 import datetime
-from src.logic.APICalls import get_multiple_pages, reformat_response, pulls_json
+from src.logic.APICalls import get_multiple_pages, reformat_response, filter_pulls_by_date
 import time
 import threading
 import math
@@ -63,7 +63,7 @@ def print_square(num):
 
 if __name__ == "__main__":
     start_time = time.perf_counter()
-    pulls_arg = pulls_json("tensorflow", "tensorflow", dt, TOKEN)
+    pulls_arg = filter_pulls_by_date("tensorflow", "tensorflow", dt, TOKEN)
     i = math.floor(len(pulls_arg)/2)
     first_half = pulls_arg[:i]
     second_half = pulls_arg[i:]

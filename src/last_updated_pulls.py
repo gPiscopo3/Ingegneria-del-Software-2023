@@ -1,5 +1,5 @@
 import datetime
-from src.logic.APICalls import pulls_json
+from src.logic.APICalls import filter_pulls_by_date
 import time
 
 TOKEN = "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"
@@ -7,7 +7,7 @@ header = {"Authorization": "Bearer " + TOKEN}
 
 # Start timer
 start_time = time.perf_counter()
-pulls = pulls_json("tensorflow", "tensorflow", datetime.datetime(2023, 11, 10), TOKEN)
+pulls = filter_pulls_by_date("tensorflow", "tensorflow", datetime.datetime(2023, 11, 10), TOKEN)
 
 for pull in pulls:
     print(pull)
