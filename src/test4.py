@@ -1,9 +1,8 @@
-from src.logic import APICalls
+
 import datetime
 from collections import Counter
-
 from src.logic.Filters import communications_in_range, create_directed_edges
-from src.logic.Pull_issue_request import pulls_json
+
 
 from src.logic.DataManagement import get_communications_since
 

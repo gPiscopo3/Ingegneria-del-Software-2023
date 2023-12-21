@@ -1,10 +1,3 @@
-import datetime
-import json
-
-import requests
-from requests.utils import parse_header_links
-
-from src.logic.Pull_issue_request import pulls_json
 from src.logic.APICalls import get_multiple_pages, reformat_response
 
 TOKEN = "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"

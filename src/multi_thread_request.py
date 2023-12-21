@@ -1,6 +1,5 @@
-from src.logic.Pull_issue_request import pulls_json
 import datetime
-from src.logic.APICalls import get_multiple_pages, reformat_response
+from src.logic.APICalls import get_multiple_pages, reformat_response, pulls_json
 import time
 import threading
 import math
