@@ -28,3 +28,6 @@ class User:
 
     def __str__(self):
         return "User: [identifier= " + str(self.identifier) + ", username= " + self.username + "]"
+
+    # def __hash__(self):
+    #     return hash(self.username)
