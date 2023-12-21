@@ -105,7 +105,7 @@ def get_multiple_pages(url: str, header: Dict[str, str]):
 
 
 # richieste get con sleep integrato nel caso si raggiunga il ratelimit
-def get_with_ratelimit(url: str, header, limit: int):
+def get_with_ratelimit(url: str, header: Dict[str, str], limit: int):
     response = requests.get(url, headers=header)
     # se raggiungo il ratelimit, metto in sleep fino a che non si resetta
     if int(response.headers.get("X-RateLimit-Remaining")) <= limit:
