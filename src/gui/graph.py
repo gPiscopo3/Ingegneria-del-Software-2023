@@ -10,10 +10,10 @@ from src.logic.Filters import collaborations_in_range, communications_in_range
 
 
 def create_graph(owner: str, repo_name: str, starting_date: datetime, token: str, datai: datetime, dataf: datetime,
-                 files: dict):
+                 files):
     if files is None:
         files = get_collaborations_since(owner, repo_name, starting_date, token)
-    collaborations = collaborations_in_range(datai, dataf, files)
+    collaborations = collaborations_in_range(datai, dataf, files.values())
     # print(collaborations)
 
     lista_trasformata = [
@@ -41,7 +41,7 @@ def create_graph_communication(owner: str, repo_name: str, starting_date: dateti
                                dataf: datetime, all_users):
     if all_users is None:
         all_users = get_communications_since(owner, repo_name, starting_date, token)
-    communications = communications_in_range(datai, dataf, all_users)  # mappa di adiacenza : Dict[User, List[User]]
+    communications = communications_in_range(datai, dataf, all_users.values())  # mappa di adiacenza : Dict[User, List[User]]
     lista_archi_diretti = create_directed_edges(communications)
     conteggi_totali = Counter(lista_archi_diretti)
     G = nx.DiGraph()

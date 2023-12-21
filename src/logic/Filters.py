@@ -1,13 +1,13 @@
 from datetime import datetime
 from itertools import combinations
-from typing import List, Dict, Set
+from typing import List, Dict
 from src.model.File import File
 from src.model.User import User
 
 
-def communications_in_range(start: datetime, end: datetime, users):
+def communications_in_range(start: datetime, end: datetime, users: List[User]):
     adjacency_map: Dict[User, List[User]] = dict()
-    for sender in users.values():
+    for sender in users:
         adjacency_map[sender] = list()
         for date, receivers in sender.communications.items():
             if start <= date <= end:
@@ -16,9 +16,9 @@ def communications_in_range(start: datetime, end: datetime, users):
     return adjacency_map
 
 
-def collaborations_in_range(start: datetime, end: datetime, files):
+def collaborations_in_range(start: datetime, end: datetime, files: List[File]):
     edges = []
-    for sha, file in files.items():
+    for file in files:
         collaborators = set()
         for commit_date, author in file.modified_by.items():
             if start <= commit_date <= end:
