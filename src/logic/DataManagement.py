@@ -115,10 +115,19 @@ def update_communications(response: dict, all_users: Dict[int, User], starting_d
         previous_users_ids.add(sender["id"])  # aggiunge l'autore della risposta nel buffer
 
 
-def save_all_user(filename: str, dizionario_di_utenti):
-    with open(filename, 'wb') as fp:
-        for elem in dizionario_di_utenti.values():
-            pickle.dump(elem, fp)
+def save_all_user(filename: str, dizionario):
+    if not dizionario:
+        return
+    try:
+        with open(filename, 'wb') as fp:
+            for elem in dizionario.values():
+                pickle.dump(elem, fp)
+    except TypeError:
+        print("TypeError: None type")
+    except OSError:
+        print("TypeError: wrong type")
+    except AttributeError:
+        os.remove(filename)
 
 
 # def save_all_files(filename: str, dizionario_di_file):
