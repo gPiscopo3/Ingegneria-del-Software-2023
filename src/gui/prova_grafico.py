@@ -8,7 +8,7 @@ from widget_calendar import CalendarioApp
 import datetime as dt
 from src.gui.graph import create_graph, GraphWidget, create_graph_communication, create_composite_graph
 
-TOKEN = "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"
+TOKEN = "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"
 
 
 def init_graph():
