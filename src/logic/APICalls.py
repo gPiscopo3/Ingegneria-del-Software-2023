@@ -74,17 +74,22 @@ def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token
 # ritorna la lista delle pulls filtrando per data
 def filter_pulls_by_date(url: str, header: Dict[str, str], starting_date: datetime):
     results = []
-    while url:
-        response = get_with_ratelimit(url, header)
-        results.extend(response.json())
-        url = None
-        if 'Link' in response.headers:
-            links = requests.utils.parse_header_links(response.headers['Link'])
-            for link in links:
-                last_date = datetime.strptime(response.json()[-1]["created_at"], DATE_FORMAT)
-                if link['rel'] == 'next' and last_date > starting_date:
-                    url = link['url']
-    return results
+    try:
+        while url:
+            response = get_with_ratelimit(url, header)
+            response.raise_for_status()
+            results.extend(response.json())
+            url = None
+            if 'Link' in response.headers:
+                links = requests.utils.parse_header_links(response.headers['Link'])
+                for link in links:
+                    last_date = datetime.strptime(response.json()[-1]["created_at"], DATE_FORMAT)
+                    if link['rel'] == 'next' and last_date > starting_date:
+                        url = link['url']
+        return results  # list
+    except HTTPError as e:
+        print(e.response.text)
+        return []  # in caso di errore ritorna una lista vuota
 
 
 # per ogni get request controlla se ci sono altre pagine e unisce tutti i risultati
