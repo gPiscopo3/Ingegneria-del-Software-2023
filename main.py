@@ -1,15 +1,8 @@
-# This is a sample Python script.
-
-# Press Maiusc+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
-
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+8 to toggle the breakpoint.
-
+from APICalls import get_collaborations_since
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    print_hi('PyCharm')
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+    files = get_collaborations_since('2023-11-09T00:00:00Z', 'apache', 'commons-io',
+                                     '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')
+
