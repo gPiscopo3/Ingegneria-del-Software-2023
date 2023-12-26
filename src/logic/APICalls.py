@@ -1,5 +1,7 @@
 from requests import HTTPError
 from typing import Dict
+
+from requests.exceptions import MissingSchema
 from requests.utils import parse_header_links
 from datetime import datetime
 import requests
@@ -74,6 +76,8 @@ def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token
 # ritorna la lista delle pulls filtrando per data
 def filter_pulls_by_date(url: str, header: Dict[str, str], starting_date: datetime):
     results = []
+    if not isinstance(starting_date, datetime):
+        raise TypeError("'starting_date' parameter must be datetime")
     try:
         while url:
             response = get_with_ratelimit(url, header)
@@ -86,6 +90,9 @@ def filter_pulls_by_date(url: str, header: Dict[str, str], starting_date: dateti
                     last_date = datetime.strptime(response.json()[-1]["created_at"], DATE_FORMAT)
                     if link['rel'] == 'next' and last_date > starting_date:
                         url = link['url']
+        for result in results:
+            if datetime.strptime(result['created_at'], DATE_FORMAT) < starting_date:
+                results.remove(result)
         return results  # list
     except HTTPError as e:
         print(e.response.text)
@@ -114,16 +121,24 @@ def get_multiple_pages(url: str, header: Dict[str, str]):
 
 # richieste get con sleep integrato nel caso si raggiunga il ratelimit
 def get_with_ratelimit(url: str, header: Dict[str, str]):
-    response = requests.get(url, headers=header)
-    # se raggiungo il ratelimit, metto in sleep fino a che non si resetta
-    if int(response.headers.get("X-RateLimit-Remaining")) <= 0:
-        now_timestamp = int(time.mktime(datetime.now().timetuple()))
-        time.sleep(int(response.headers.get("X-RateLimit-Reset")) - now_timestamp)
-    return response
+    try:
+        response = requests.get(url, headers=header)
+        # se raggiungo il ratelimit, metto in sleep fino a che non si resetta
+        if int(response.headers.get("X-RateLimit-Remaining")) <= 0:
+            now_timestamp = int(time.mktime(datetime.now().timetuple()))
+            time.sleep(int(response.headers.get("X-RateLimit-Reset")) - now_timestamp)
+        return response
+    except MissingSchema as e:
+        print(f"URL Error: {e}")
+        # Esempio: solleva un'altra eccezione per gestire l'URL malformato
+        raise ValueError("Bad URL") from e
 
 
 # riformatta ogni commento/commit/review in un dictionary con coppie <data: autore>
 def reformat_response(response: list):
+    if not isinstance(response, list):
+        raise TypeError("'response' parameter must be list ")
+
     buffer = dict()
     for item in response:
         if "created_at" in item:

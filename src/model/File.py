@@ -30,4 +30,5 @@ class File:
         return False
 
     def __hash__(self):
-        return hash((self.identifier, self.modified_by))
+        hashable_modifiedy_by = tuple(sorted(self.modified_by.items()))
+        return hash((self.identifier, hashable_modifiedy_by))
