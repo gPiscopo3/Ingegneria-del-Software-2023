@@ -14,7 +14,7 @@ filename = "file"
 dict = {'key1': 'value1', 'key2': 'value2'}
 owner = "apache"
 repo_name = "commons-io"
-token = "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"
+token = "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"
 starting_date = dt.datetime(2023, 12, 10)
 starting_date_out = dt.datetime(2024, 12, 10)
 
@@ -97,6 +97,7 @@ def test_update_communications_none_response():
 
 
 def test_update_communications_empty_response():
+    all_users = {1: user}
     update_communications(response={}, all_users=all_users, starting_date=starting_date)
     assert all_users == {1: user}
 
@@ -193,8 +194,8 @@ def test_get_communications_since_repo_none():
 
 
 def test_get_communications_since_repo_nonexistent():
-    all_users_res = get_communications_since(owner, "", starting_date, token)
-    assert len(all_users_res) == 0
+    all_users_res1 = get_communications_since(owner, "", starting_date, token)
+    assert len(all_users_res1) == 0
 
 
 def test_get_communications_since_date_none():
@@ -202,7 +203,7 @@ def test_get_communications_since_date_none():
         get_communications_since(owner="fullmoonlullaby", repo_name="test",
                                  starting_date=None, token=token)
         assert False
-    except AttributeError:
+    except TypeError:
         assert True  # passa solo se non c'è la repo nella cache per cui si fa la chiamata
 
 
