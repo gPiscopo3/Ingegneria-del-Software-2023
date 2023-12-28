@@ -89,7 +89,7 @@ class GraphWidget(QWidget):
             legend_handles = [
                 plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[label], markersize=10, label=label)
                 for label in legend_labels]
-            plt.legend(handles=legend_handles, title="Tipi di collegamenti", loc='upper left')
+            plt.legend(handles=legend_handles, title="Tipi di collegamenti", loc='upper right')
         layout.addWidget(canvas)
 
 

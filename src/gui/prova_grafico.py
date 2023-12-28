@@ -8,7 +8,7 @@ from widget_calendar import CalendarioApp
 import datetime as dt
 from src.gui.graph import create_graph, GraphWidget, create_graph_communication, create_composite_graph
 
-TOKEN = "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"
+TOKEN = "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"
 
 
 def init_graph():
@@ -28,7 +28,7 @@ class MainViewer(QMainWindow):
 
         self.text_choice = None
         self.graph_widget = None
-        self.setWindowTitle('App di Giovanni')
+        self.setWindowTitle('GraphApp')
         self.setGeometry(100, 100, 800, 600)
 
         self.central_widget = QWidget()
@@ -58,6 +58,7 @@ class MainViewer(QMainWindow):
         self.datainizio = dt.datetime(2023, 11, 15)
         self.calendario_widget = CalendarioApp(self.datainizio)
         self.layout.addWidget(self.calendario_widget)
+        self.calendario_widget.setFixedWidth(160)
 
         # Pulsante per aggiornare il grafico in base all'intervallo selezionato
         self.update_button = QPushButton('Aggiorna Grafico', self)
