@@ -9,6 +9,10 @@ OWNER = "fullmoonlullaby"
 REPO = "test"
 
 
+def test_always_fails():
+    assert False
+
+
 def test_get_issues_ok():
     issues = get_issues_since(OWNER, REPO, DATE, TOKEN)
     assert len(issues) > 0  # va fatto meglio, non basta controllare se non vuota
@@ -274,7 +278,7 @@ def test_filter_pulls_by_date_url_not_found():
     results = filter_pulls_by_date("https://api.github.com/repos/not_existent/test/pulls",
                                    {"Authorization": "Bearer " + TOKEN},
                                    DATE)
-    assert  len(results) == 0
+    assert len(results) == 0
 
 
 def test_filter_pulls_by_date_bad_header():
@@ -298,8 +302,8 @@ def test_filter_pulls_by_date_wrong_date_format():
 
 def test_filter_pulls_by_date_date_not_in_range():
     results = filter_pulls_by_date("https://api.github.com/repos/fullmoonlullaby/test/pulls",
-                         {"Authorization": "Bearer " + TOKEN},
-                         datetime.now() + timedelta(days=2))
+                                   {"Authorization": "Bearer " + TOKEN},
+                                   datetime.now() + timedelta(days=2))
     assert len(results) == 0
 
 
