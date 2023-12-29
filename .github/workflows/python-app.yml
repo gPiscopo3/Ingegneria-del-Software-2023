@@ -29,3 +29,6 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         pytest --cov-report html test --cov=.\
+    - name: Static analysis
+      run: |
+        pylint --disable line-too-long --disable wrong-import-order --disable no-name-in-module ./src
