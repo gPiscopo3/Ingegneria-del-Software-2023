@@ -9,7 +9,7 @@ import datetime as dt
 from src.gui.graph import create_graph, GraphWidget, create_graph_communication, create_composite_graph
 import os
 
-TOKEN = os.environ['GH_TOKEN']
+#TOKEN = os.environ['GH_TOKEN']
 
 
 def init_graph():
@@ -92,39 +92,39 @@ class MainViewer(QMainWindow):
         if (self.owner.text().__eq__(self.previous_owner) and self.repo_name.text().__eq__(self.previous_repo)
                 and self.text_choice.__eq__(self.previous_choice)):
             if self.text_choice == "collaborazioni":
-                g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio,
+                g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, self.token.text(), data_inizio,
                                              data_fine,
                                              self.files)
                 self.graph_widget = GraphWidget(g, 1, None)
 
             elif self.text_choice == "comunicazioni":
-                g, self.users = create_graph_communication(self.owner.text(), self.repo_name.text(), datainizio, TOKEN,
+                g, self.users = create_graph_communication(self.owner.text(), self.repo_name.text(), datainizio, self.token.text(),
                                                            data_inizio, data_fine, self.users)
                 self.graph_widget = GraphWidget(g, 2, None)
 
             elif self.text_choice == "composito":
                 g, self.files, self.users, self.edge_color = create_composite_graph(self.owner.text(),
                                                                                     self.repo_name.text(), datainizio,
-                                                                                    TOKEN,
+                                                                                    self.token.text(),
                                                                                     data_inizio, data_fine, self.files,
                                                                                     self.users)
                 self.graph_widget = GraphWidget(g, 3, self.edge_color)
 
         else:
             if self.text_choice == "collaborazioni":
-                g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, TOKEN, data_inizio,
+                g, self.files = create_graph(self.owner.text(), self.repo_name.text(), datainizio, self.token.text(), data_inizio,
                                              data_fine, None)
                 self.graph_widget = GraphWidget(g, 1, None)
 
             elif self.text_choice == "comunicazioni":
-                g, self.users = create_graph_communication(self.owner.text(), self.repo_name.text(), datainizio, TOKEN,
+                g, self.users = create_graph_communication(self.owner.text(), self.repo_name.text(), datainizio, self.token.text(),
                                                            data_inizio, data_fine, None)
                 self.graph_widget = GraphWidget(g, 2, None)
 
             elif self.text_choice == "composito":
                 g, self.files, self.users, self.edge_color = create_composite_graph(self.owner.text(),
                                                                                     self.repo_name.text(), datainizio,
-                                                                                    TOKEN,
+                                                                                    self.token.text(),
                                                                                     data_inizio, data_fine, None,
                                                                                     None)
                 self.graph_widget = GraphWidget(g, 3, self.edge_color)
