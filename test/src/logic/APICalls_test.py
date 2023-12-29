@@ -9,10 +9,6 @@ OWNER = "fullmoonlullaby"
 REPO = "test"
 
 
-def test_always_fails():
-    assert False
-
-
 def test_get_issues_ok():
     issues = get_issues_since(OWNER, REPO, DATE, TOKEN)
     assert len(issues) > 0  # va fatto meglio, non basta controllare se non vuota
