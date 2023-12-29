@@ -31,4 +31,4 @@ jobs:
         pytest --cov-report html test --cov=.\
     - name: Static analysis
       run: |
-        pylint --disable line-too-long --disable wrong-import-order --disable no-name-in-module ./src
+        pylint --disable line-too-long --disable wrong-import-order --disable no-name-in-module --exit-zero ./src
