@@ -5,8 +5,8 @@ import datetime as dt
 from typing import Dict
 from unittest.mock import MagicMock
 
-from logic import APICalls
-from model.User import User
+from src.logic import APICalls
+from src.model.User import User
 from src.logic.DataManagement import save_all_user, update_communications, communication_happened, \
     get_communications_since, get_collaborations_since
 
@@ -14,7 +14,7 @@ filename = "file"
 dict = {'key1': 'value1', 'key2': 'value2'}
 owner = "apache"
 repo_name = "commons-io"
-token = "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"
+token = os.environ['GH_TOKEN']
 starting_date = dt.datetime(2023, 12, 10)
 starting_date_out = dt.datetime(2024, 12, 10)
 
