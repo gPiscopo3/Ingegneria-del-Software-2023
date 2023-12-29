@@ -15,6 +15,7 @@ PyQt6==6.6.1
 PyQt6-Qt6==6.6.1
 PyQt6-sip==13.6.0
 pyqtgraph==0.13.3
+pylint==3.0.3
 PySDL2==0.9.16
 pysdl2-dll==2.24.0
 pyserial==3.5
