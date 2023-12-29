@@ -3,12 +3,13 @@ import sys
 from PyQt6.QtWidgets import (QWidget, QMainWindow, QVBoxLayout, QPushButton, QGraphicsScene, QGraphicsView, \
                              QMessageBox, QApplication, QLineEdit, QFormLayout, QComboBox)
 
-from widget_calendar import CalendarioApp
+from src.gui.widget_calendar import CalendarioApp
 
 import datetime as dt
 from src.gui.graph import create_graph, GraphWidget, create_graph_communication, create_composite_graph
+import os
 
-TOKEN = "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"
+TOKEN = os.environ['GH_TOKEN']
 
 
 def init_graph():
