@@ -1,9 +1,10 @@
 from datetime import datetime
 from datetime import timedelta
 from src.logic.APICalls import *
+import os
 
 DATE = datetime(2023, 11, 1)
-TOKEN = "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"
+TOKEN = os.environ['GH_TOKEN']
 OWNER = "fullmoonlullaby"
 REPO = "test"
 
@@ -214,7 +215,7 @@ def test_get_multiple_pages_bad_header():
 
 def test_get_with_ratelimit_ok():
     results = get_with_ratelimit("https://api.github.com/repos/fullmoonlullaby/test/issues",
-                                 {"Authorization": "Bearer " + TOKEN})
+                                 {})
     assert results.status_code == 200
 
 
@@ -236,7 +237,7 @@ def test_get_with_ratelimit_none():
 
 def test_get_with_ratelimit_not_found():
     results = get_with_ratelimit("https://api.github.com/repos/not_existent/test/issues",
-                                 {"Authorization": "Bearer " + TOKEN})
+                                 {})
     assert results.status_code == 404
 
 

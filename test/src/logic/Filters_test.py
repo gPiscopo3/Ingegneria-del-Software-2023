@@ -1,8 +1,9 @@
 import datetime
 from src.logic.DataManagement import get_communications_since, get_collaborations_since
 from src.logic.Filters import communications_in_range, collaborations_in_range
+import os
 
-TOKEN = "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"
+TOKEN = os.environ['GH_TOKEN']
 header = {"Authorization": "Bearer " + TOKEN}
 dt = datetime.datetime(2023, 12, 13)
 
