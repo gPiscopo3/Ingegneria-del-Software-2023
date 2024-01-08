@@ -228,7 +228,15 @@ def test_get_communications_since_token_nonexistent():
 
     assert len(all_users_res) == 0
 
-#*****************************************************************************************************
+
+def test_get_communications_since_ok_nocache():
+    all_users_res = get_communications_since(owner="fullmoonlullaby", repo_name="test",
+                                             starting_date=dt.datetime(year=2023, month=11, day=1),
+                                             token=token)
+    assert len(all_users_res) > 0  # va fatto meglio, non basta controllare se non vuota
+
+
+# *****************************************************************************************************
 
 
 def test_get_collaborations_since_ok():
@@ -273,7 +281,7 @@ def test_get_collaborations_since_date_none():
 
 def test_get_collaborations_since_date_now():
     files = get_collaborations_since(owner="fullmoonlullaby", repo_name="test",
-                                             starting_date=starting_date_out, token=token)
+                                     starting_date=starting_date_out, token=token)
     assert len(files) == 0  # passa solo se non c'è la repo nella cache per cui si fa la chiamata
 
 
@@ -288,6 +296,6 @@ def test_get_collaborations_since_token_none():
 
 def test_get_collaborations_since_token_nonexistent():
     files = get_collaborations_since(owner="fullmoonlullaby", repo_name="test",
-                                             starting_date=starting_date, token='token_sbagliato')
+                                     starting_date=starting_date, token='token_sbagliato')
 
     assert len(files) == 0
