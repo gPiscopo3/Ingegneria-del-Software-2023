@@ -1,10 +1,12 @@
+from concurrent.futures import ThreadPoolExecutor, FIRST_EXCEPTION, wait
 from requests import HTTPError
-from typing import Dict, Optional
+from typing import Callable, Dict, Iterable, List, Optional
 
 from requests.exceptions import MissingSchema
 from requests.utils import parse_header_links
 from datetime import datetime
 import requests
+import threading
 import time
 
 
@@ -14,9 +16,81 @@ BASE_URL = API_URL + '/repos/'
 API_VERSION = '2026-03-10'
 DEFAULT_HEADERS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": API_VERSION}
 MAX_RETRIES = 3
+MAX_WORKERS = 8  # richieste contemporanee
+MAX_REQUESTS_PER_SECOND = 12  # sotto il limite secondario di GitHub (~900 richieste/minuto)
+
+# callback di avanzamento: (etichetta, elementi completati, totale)
+Progress = Optional[Callable[[str, int, int], None]]
 
 # ultimi valori di rate limit letti dagli header delle risposte (usati dalla GUI)
 last_rate_limit: Dict[str, int] = {}
+_rate_limit_lock = threading.Lock()
+
+# impostato dalla GUI per interrompere un download in corso
+cancel_event = threading.Event()
+
+# chiamato con i secondi di attesa quando si raggiunge il rate limit (usato dalla GUI)
+rate_limit_listener: Optional[Callable[[int], None]] = None
+
+
+class DownloadCancelled(Exception):
+    pass
+
+
+class _Throttle:
+    # distanzia gli avvii delle richieste di tutti i thread e li mette in pausa insieme in caso di rate limit
+    def __init__(self, per_second: float):
+        self.interval = 1 / per_second
+        self.next_slot = 0.0
+        self.pause_until = 0.0
+        self.lock = threading.Lock()
+
+    def acquire(self):
+        with self.lock:
+            now = time.monotonic()
+            slot = max(now, self.next_slot, self.pause_until)
+            self.next_slot = slot + self.interval
+        if slot > now and cancel_event.wait(slot - now):
+            raise DownloadCancelled()
+
+    def pause(self, seconds: int):
+        with self.lock:
+            self.pause_until = max(self.pause_until, time.monotonic() + seconds)
+
+
+_throttle = _Throttle(MAX_REQUESTS_PER_SECOND)
+_local = threading.local()
+
+
+def _session():
+    # una sessione per thread: riusa le connessioni (keep-alive) senza condividere oggetti non thread-safe
+    if not hasattr(_local, "session"):
+        _local.session = requests.Session()
+    return _local.session
+
+
+# applica func a ogni elemento con più thread; i risultati restano nell'ordine degli elementi
+def parallel_map(func: Callable, items: Iterable, progress: Progress = None, label: str = "") -> List:
+    items = list(items)
+    if not items:
+        return []
+    results = [None] * len(items)
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {executor.submit(func, item): i for i, item in enumerate(items)}
+        pending = set(futures)
+        done_count = 0
+        while pending:
+            done, pending = wait(pending, return_when=FIRST_EXCEPTION)
+            for future in done:
+                if future.exception() is not None:
+                    for other in pending:
+                        other.cancel()
+                    raise future.exception()
+                results[futures[future]] = future.result()
+                done_count += 1
+            if progress is not None:
+                progress(label, done_count, len(items))
+    return results
 
 
 def build_header(token: str):
@@ -28,30 +102,28 @@ def build_header(token: str):
     return {"Authorization": "Bearer " + token.strip()}
 
 
-def get_issues_since(owner: str, repo_name: str, starting_date: datetime, token: str):
+def get_issues_since(owner: str, repo_name: str, starting_date: datetime, token: str, progress: Progress = None):
     header = build_header(token)
     query_string = "?state=all&per_page=100&since=" + starting_date.strftime(DATE_FORMAT)
-    issues = []
     results = get_multiple_pages(BASE_URL + owner + '/' + repo_name + '/issues' + query_string, header)
-    for issue in results:
-        # l'endpoint delle issue restituisce anche le pull request, già gestite da get_pulls_since
-        if "pull_request" in issue:
-            continue
+    # l'endpoint delle issue restituisce anche le pull request, già gestite da get_pulls_since
+    results = [issue for issue in results if "pull_request" not in issue]
+
+    def issue_comments(issue):
         comments = dict()
         comments[datetime.strptime(issue["created_at"], DATE_FORMAT)] = issue["user"]
         comments = comments | reformat_response(get_multiple_pages(issue["comments_url"] + "?per_page=100", header))
-        comments = dict(sorted(comments.items()))
-        issues.append(comments)
-    return issues  # lista di dictionary
+        return dict(sorted(comments.items()))
+
+    return parallel_map(issue_comments, results, progress, "Issue")  # lista di dictionary
 
 
-def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: str):
+def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: str, progress: Progress = None):
     header = build_header(token)
-    pull_requests = []
     query_string = "?state=all&sort=created&direction=desc&per_page=100"
     results = filter_pulls_by_date(BASE_URL + owner + '/' + repo_name + '/pulls' + query_string, header, starting_date)
-    for pull in results:
 
+    def pull_replies(pull):
         # vengono presi gli url per accedere a comments, reviews, review comments e commits di una pull request
         # il link alle review è aggiunto a mano perché non c'è nel json di risposta
         urls = list()
@@ -65,36 +137,55 @@ def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: 
         replies[datetime.strptime(pull["created_at"], DATE_FORMAT)] = pull["user"]
         for url in urls:
             replies = replies | reformat_response(get_multiple_pages(url, header))
-        replies = dict(sorted(replies.items()))
-        pull_requests.append(replies)
+        return dict(sorted(replies.items()))
 
-    return pull_requests  # lista di dictionary
+    return parallel_map(pull_replies, results, progress, "Pull request")  # lista di dictionary
 
 
-def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token: str):
+def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token: str, progress: Progress = None):
     header = build_header(token)
     query_string = "?per_page=100"
-    commits = []  # lista dove saranno contenuti, mischiati, i commit di ogni branch
-    response = get_multiple_pages(BASE_URL + owner + '/' + repo_name + '/branches' + query_string, header)
+    branches = get_multiple_pages(BASE_URL + owner + '/' + repo_name + '/branches' + query_string, header)
     query_string += "&since=" + starting_date.strftime(DATE_FORMAT)
-    for branch in response:  # prendo tutti i branch
-        response = get_multiple_pages(BASE_URL + owner + '/' + repo_name + '/commits' + query_string + "&sha=" +
-                                      branch["commit"]["sha"], header)
-        for commit in response:  # per ogni branch prendo tutti i commit
-            try:
-                commits.append(get_commit(commit["url"], header))
-            except HTTPError as e:
-                print(e.response.text)
-    return commits  # lista di dictionary
+
+    def branch_commits(branch):
+        return get_multiple_pages(BASE_URL + owner + '/' + repo_name + '/commits' + query_string + "&sha=" +
+                                  branch["commit"]["sha"], header)
+
+    # un commit raggiungibile da più branch viene scaricato una sola volta
+    unique_commits = {}
+    for commits_of_branch in parallel_map(branch_commits, branches, progress, "Branch"):
+        for commit in commits_of_branch:
+            unique_commits.setdefault(commit["sha"], commit)
+
+    def commit_details(commit):
+        try:
+            return get_commit(commit["url"], header)
+        except HTTPError as e:
+            print(e.response.text)
+            return None
+
+    details = parallel_map(commit_details, unique_commits.values(), progress, "Commit")
+    return [commit for commit in details if commit is not None]  # lista di dictionary
 
 
 def get_rate_limit(token: str) -> Optional[Dict[str, int]]:
-    # la chiamata a /rate_limit non consuma quota; ritorna None se il token non è valido
-    response = requests.get(API_URL + '/rate_limit', headers=DEFAULT_HEADERS | build_header(token), timeout=15)
-    if response.status_code != 200:
+    # quota effettiva letta dagli header di una richiesta reale: con alcuni token /rate_limit riporta sempre la
+    # quota piena. Con un token si usa /user (costa 1 richiesta e risponde 401 se il token non è valido);
+    # senza token /rate_limit, che non consuma quota. Ritorna None se il token non è valido.
+    url = API_URL + ('/user' if build_header(token) else '/rate_limit')
+    response = _session().get(url, headers=DEFAULT_HEADERS | build_header(token), timeout=15)
+    if response.status_code == 401:
         return None
-    core = response.json()["resources"]["core"]
-    return {"limit": core["limit"], "remaining": core["remaining"], "reset": core["reset"]}
+    rate = {}
+    for key in ("limit", "remaining", "reset"):
+        value = response.headers.get("X-RateLimit-" + key.capitalize())
+        if value is None or not value.isdigit():
+            response.raise_for_status()  # errore del server senza header di quota
+            raise requests.RequestException("Header di rate limit mancanti nella risposta di GitHub")
+        rate[key] = int(value)
+    update_last_rate_limit(response)
+    return rate  # presente anche con quota esaurita (403), il token resta valido
 
 
 # funzioni "private" delle funzioni di sopra
@@ -167,13 +258,20 @@ def get_with_ratelimit(url: str, header: Dict[str, str]):
     headers.update(DEFAULT_HEADERS)
     try:
         for _ in range(MAX_RETRIES):
-            response = requests.get(url, headers=headers, timeout=30)
+            if cancel_event.is_set():
+                raise DownloadCancelled()
+            _throttle.acquire()
+            response = _session().get(url, headers=headers, timeout=30)
             update_last_rate_limit(response)
-            wait = seconds_to_wait(response)
-            if wait is None:
+            seconds = seconds_to_wait(response)
+            if seconds is None:
                 return response
-            print(f"Rate limit raggiunto, attesa di {wait} secondi")
-            time.sleep(wait)
+            print(f"Rate limit raggiunto, attesa di {seconds} secondi")
+            _throttle.pause(seconds)  # mette in pausa anche gli altri thread
+            if rate_limit_listener is not None:
+                rate_limit_listener(seconds)
+            if cancel_event.wait(seconds):
+                raise DownloadCancelled()
         return response
     except MissingSchema as e:
         print(f"URL Error: {e}")
@@ -197,10 +295,11 @@ def seconds_to_wait(response: requests.Response):
 
 
 def update_last_rate_limit(response: requests.Response):
-    for key in ("limit", "remaining", "reset"):
-        value = response.headers.get("X-RateLimit-" + key.capitalize())
-        if value is not None and value.isdigit():
-            last_rate_limit[key] = int(value)
+    with _rate_limit_lock:
+        for key in ("limit", "remaining", "reset"):
+            value = response.headers.get("X-RateLimit-" + key.capitalize())
+            if value is not None and value.isdigit():
+                last_rate_limit[key] = int(value)
 
 
 # riformatta ogni commento/commit/review in un dictionary con coppie <data: autore>

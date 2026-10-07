@@ -10,7 +10,7 @@
 **come collaborano e comunicano i suoi sviluppatori** in un intervallo di tempo scelto dall'utente.
 
 Basta inserire owner e nome del repository: l'app scarica commit, issue, pull request, review e commenti
-tramite le API REST di GitHub, li salva in una cache locale e costruisce il grafo con
+tramite le API REST di GitHub e costruisce il grafo con
 [NetworkX](https://networkx.org/), visualizzandolo con [Matplotlib](https://matplotlib.org/) dentro
 un'interfaccia [PyQt6](https://www.riverbankcomputing.com/software/pyqt/).
 
@@ -29,7 +29,7 @@ un'interfaccia [PyQt6](https://www.riverbankcomputing.com/software/pyqt/).
 - [Token GitHub](#token-github)
 - [Avvio e utilizzo](#avvio-e-utilizzo)
 - [Architettura](#architettura)
-- [Cache e rate limit](#cache-e-rate-limit)
+- [Salvataggio dei dati e rate limit](#salvataggio-dei-dati-e-rate-limit)
 - [Test e qualità del codice](#test-e-qualità-del-codice)
 - [Limiti noti](#limiti-noti)
 - [Licenza](#licenza)
@@ -49,7 +49,11 @@ un'interfaccia [PyQt6](https://www.riverbankcomputing.com/software/pyqt/).
   **tema scuro e chiaro** commutabili al volo.
 - **Token inserito nell'app**: il personal access token si incolla direttamente nell'interfaccia, si
   verifica con un click e resta solo in memoria; la quota di richieste API residua è sempre visibile.
-- **Cache locale**: i dati di ogni repository vengono scaricati una sola volta e salvati su disco.
+- **Salvataggio e caricamento dei dati**: i dati scaricati da GitHub si salvano in un file `.graphapp`
+  scelto dall'utente e si ricaricano in seguito (anche su un altro computer e senza token) per generare
+  qualsiasi grafo senza nuove chiamate alle API.
+- **Download parallelo e in background**: le richieste a GitHub partono su più thread e l'interfaccia
+  resta utilizzabile, con l'avanzamento nella barra di stato e un pulsante per annullare.
 - **Gestione del rate limit**: in caso di limite raggiunto (primario o secondario) l'app attende il reset
   e riprova automaticamente.
 
@@ -111,12 +115,14 @@ Il badge sotto il campo mostra l'esito:
 
 | Badge | Significato |
 |-------|-------------|
-| ✓ Autenticato · 4.987/5.000 richieste | token valido, con la quota residua |
+| ✓ Autenticato · 4.987/5.000 richieste · rinnovo alle 16:27 | token valido, con le richieste effettivamente disponibili e l'ora in cui la quota torna piena |
+| ✓ Autenticato · 0/5.000 richieste · rinnovo alle 16:27 (rosso) | token valido ma quota esaurita: i download attendono il rinnovo |
 | ✕ Token non valido o scaduto | GitHub ha rifiutato il token: l'app non procede |
-| Nessun token · limite di 60 richieste/ora | si usano le API senza autenticazione (l'app chiede conferma) |
+| Nessun token · 12/60 richieste · rinnovo alle 16:27 | si usano le API senza autenticazione (l'app chiede conferma) |
 
 > 🔒 **Il token non viene mai salvato su disco**: resta in memoria solo finché l'app è aperta.
 > Se non lo verifichi a mano, l'app lo verifica automaticamente prima di generare il grafo.
+> Durante un download il badge e la barra di stato si aggiornano a ogni risposta di GitHub.
 
 ## Avvio e utilizzo
 
@@ -133,9 +139,31 @@ python -m src.main
 5. Premi **Genera grafo**.
 
 Il primo caricamento di un repository può richiedere tempo (vengono scaricati tutti i commit di tutti i
-branch, le issue e le pull request con i relativi commenti); i caricamenti successivi usano la cache
-e sono immediati. Cambiando solo l'intervallo, o tornando a un tipo di grafo già generato, non viene
-fatta alcuna nuova richiesta.
+branch, le issue e le pull request con i relativi commenti). Il download avviene in background: la barra
+di stato mostra l'avanzamento (es. `apache/commons-io · Collaborazioni · Commit 340/1.200`) e il pulsante
+diventa **Annulla download**; annullando, le parti già scaricate per intero (collaborazioni o
+comunicazioni) restano in memoria e si possono salvare. Finché l'app resta aperta, cambiando solo
+l'intervallo o tornando a un tipo di grafo già generato non viene fatta alcuna nuova richiesta.
+
+### Salvare e ricaricare i dati
+
+Nella card **Dati** della sidebar:
+
+- **Salva dati…** salva in un file `.graphapp` i dati già scaricati del repository indicato
+  (collaborazioni e/o comunicazioni, a seconda dei grafi generati). Sotto i pulsanti è indicato cosa è
+  in memoria, ad esempio `apache/commons-io · collaborazioni ✓ · comunicazioni ✕ · dati del 07/10/2026 14:58`.
+- **Carica dati…** apre un file salvato in precedenza: owner e nome del repository vengono compilati da
+  soli e, se il file contiene i dati per il tipo di grafo scelto, il grafo viene generato subito.
+  Non serve il token; se manca una parte dei dati (es. solo collaborazioni) e si sceglie un grafo che la
+  richiede, quella parte viene scaricata da GitHub.
+- Dopo il caricamento il calendario si **limita al periodo coperto dal file** (dalla data di inizio del
+  download alla data di salvataggio) e lo seleziona per intero; sotto le date compare il periodo
+  disponibile e quello in cui c'è attività registrata, ad esempio
+  `Dati disponibili dal 15/11/2023 al 18/12/2023 · attività registrata dal 16/11/2023 al 15/12/2023`.
+  Cambiando owner o nome del repository il calendario torna ai limiti normali.
+
+In [`data/examples/`](data/examples) ci sono i dati di esempio di `apache/commons-io` e
+`tensorflow/tensorflow`, da aprire con **Carica dati…** per provare l'app senza token.
 La barra di stato in basso mostra l'intervallo analizzato e la quota API residua.
 
 Nella toolbar sopra il grafo trovi: ripristino della vista, zoom, spostamento e salvataggio come
@@ -149,14 +177,16 @@ src/
 ├── gui/
 │   ├── graph.py             # costruzione dei grafi NetworkX e GraphWidget (Matplotlib in Qt)
 │   ├── style.py             # temi scuro/chiaro: foglio di stile QSS, QPalette e colori dei grafi
-│   └── widget_calendar.py   # selettore dell'intervallo temporale
+│   ├── widget_calendar.py   # selettore dell'intervallo temporale
+│   └── worker.py            # DownloadWorker: download in un QThread, con avanzamento e annullamento
 ├── logic/
-│   ├── APICalls.py          # chiamate alle API REST di GitHub, paginazione, rate limit
-│   ├── DataManagement.py    # costruzione di utenti/file dai dati grezzi e cache su disco (.pkl)
+│   ├── APICalls.py          # chiamate alle API REST di GitHub in parallelo, paginazione, rate limit
+│   ├── DataManagement.py    # costruzione di utenti/file dai dati grezzi, salvataggio/caricamento (.graphapp)
 │   └── Filters.py           # filtro di collaborazioni e comunicazioni per intervallo di date
 └── model/
     ├── User.py              # utente e relative comunicazioni (data → destinatari)
     └── File.py              # file e relative modifiche (data → autore)
+data/examples/               # dati di esempio caricabili con «Carica dati…»
 test/                        # test pytest di logic e model
 ```
 
@@ -166,8 +196,8 @@ Flusso dei dati alla pressione di **Genera grafo**:
 flowchart LR
     GUI["main.py<br/>MainViewer"] --> G["gui/graph.py<br/>create_graph…"]
     G --> DM["logic/DataManagement.py"]
-    DM -->|cache presente| PKL[("src/*.pkl")]
-    DM -->|cache assente| API["logic/APICalls.py"]
+    GUI <-->|Salva / Carica dati| FILE[("file .graphapp")]
+    DM --> API["logic/APICalls.py"]
     API --> GH(("GitHub<br/>REST API"))
     DM --> F["logic/Filters.py<br/>filtro per date"]
     F --> NX["NetworkX<br/>Graph / DiGraph"]
@@ -187,20 +217,25 @@ Tutte le richieste usano la versione **`2026-03-10`** delle API REST (header `X-
 | Commenti di una issue / PR | `GET /repos/{owner}/{repo}/issues/{n}/comments` |
 | Pull request | `GET /repos/{owner}/{repo}/pulls?state=all` |
 | Review, commenti di review, commit di una PR | `GET /repos/{owner}/{repo}/pulls/{n}/reviews`, `/comments`, `/commits` |
-| Verifica del token e quota | `GET /rate_limit` (non consuma quota) |
+| Verifica del token e quota | `GET /user` con token (1 richiesta; la quota si legge dagli header `X-RateLimit-*`, perché con alcuni token `/rate_limit` riporta sempre la quota piena), `GET /rate_limit` senza token |
 
-## Cache e rate limit
+## Salvataggio dei dati e rate limit
 
-- **Cache su disco**: al primo download i dati vengono salvati in `src/{owner}_{repo}.pkl`
-  (comunicazioni) e `src/{owner}_{repo}_collabs.pkl` (collaborazioni). Le richieste successive per lo
-  stesso repository leggono questi file. Per forzare un nuovo download basta **cancellarli**.
-  Nel repository sono inclusi i dati di esempio di `apache/commons-io` e `tensorflow/tensorflow`,
-  utilizzabili anche senza token.
-- **Cache in memoria**: finché l'app resta aperta, cambiare intervallo o tipo di grafo sullo stesso
-  repository non rilegge nemmeno la cache su disco.
+- **Nessuna cache implicita**: l'app non scrive nulla su disco da sola. I dati scaricati restano in
+  memoria finché l'app è aperta; per conservarli si usa **Salva dati…**.
+- **Formato del file `.graphapp`**: un unico file per repository con owner e nome, data di inizio dei
+  dati, data di salvataggio, file modificati con le relative modifiche (collaborazioni) e utenti con le
+  relative comunicazioni. Una delle due parti può mancare se il grafo corrispondente non è stato generato.
+- **Caricamento sicuro**: il file è un pickle Python, ma viene letto con un unpickler ristretto che
+  accetta solo le classi del modello (`User`, `File`) e le date: un file manomesso non può eseguire codice.
+- **Richieste parallele**: i dettagli di commit, pull request e issue vengono scaricati da 8 thread, ognuno
+  con una propria sessione HTTP (connessioni riutilizzate). Un commit presente in più branch viene
+  scaricato una sola volta. Le richieste sono distanziate a un massimo di 12 al secondo, sotto il limite
+  secondario di GitHub (~900 al minuto).
 - **Rate limit**: se GitHub risponde `403`/`429` per limite raggiunto, l'app attende il tempo indicato
-  (`Retry-After` per i limiti secondari, `X-RateLimit-Reset` per quello orario) e riprova. Durante
-  l'attesa l'interfaccia resta occupata: per i repository grandi usa sempre un token.
+  (`Retry-After` per i limiti secondari, `X-RateLimit-Reset` per quello orario) e riprova; durante
+  l'attesa tutti i thread restano in pausa e la barra di stato mostra l'orario di ripresa. L'attesa si
+  può interrompere con **Annulla download**. Per i repository grandi usa sempre un token.
 
 ## Test e qualità del codice
 
@@ -220,10 +255,10 @@ copertura e analisi statica con pylint a ogni push.
 
 ## Limiti noti
 
-- Il caricamento iniziale di repository molto grandi richiede molte chiamate API (una per ogni commit),
-  quindi molto tempo; l'interfaccia resta bloccata fino al termine.
-- La cache non si aggiorna da sola: i dati successivi al primo download non vengono scaricati finché
-  non si cancellano i file `.pkl`.
+- Il caricamento iniziale richiede una chiamata API per ogni commit: oltre le 5.000 richieste (limite
+  orario con token) il download deve attendere il reset del limite, anche con le richieste in parallelo.
+- Un file `.graphapp` è una fotografia dei dati al momento del download: per aggiornarli basta generare
+  il grafo senza caricare il file (riaprendo l'app) e salvarli di nuovo.
 - I dati vengono scaricati a partire dal 15/11/2023, data minima selezionabile nel calendario.
 - Gli account GitHub eliminati (autore `null`) vengono ignorati.
 

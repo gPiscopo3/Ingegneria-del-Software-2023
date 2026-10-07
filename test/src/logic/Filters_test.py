@@ -1,14 +1,13 @@
 import datetime
-from src.logic.DataManagement import get_communications_since, get_collaborations_since
+from src.logic.DataManagement import load_data
 from src.logic.Filters import communications_in_range, collaborations_in_range
 import os
 
-TOKEN = os.environ['GH_TOKEN']
-header = {"Authorization": "Bearer " + TOKEN}
-dt = datetime.datetime(2023, 12, 13)
-
-comm_locali = get_communications_since("apache", "commons-io", dt, TOKEN)
-collab_locali = get_collaborations_since("apache", "commons-io", dt, TOKEN)
+# dati di esempio inclusi nel repository: i test dei filtri non fanno chiamate alle API
+EXAMPLE = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "examples", "apache_commons-io.graphapp")
+data = load_data(EXAMPLE)
+comm_locali = data["users"]
+collab_locali = data["files"]
 
 
 def test_communications_in_range_ok():
