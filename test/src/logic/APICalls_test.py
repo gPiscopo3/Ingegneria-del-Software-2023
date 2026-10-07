@@ -309,3 +309,27 @@ def test_reformat_response_wrong_type():
         assert False
     except TypeError:
         assert True
+
+
+def test_get_rate_limit_token_ok():
+    rate = get_rate_limit(TOKEN)
+    assert rate is not None
+    assert 0 <= rate["remaining"] <= rate["limit"]
+    assert rate["reset"] > 0
+
+
+def test_get_rate_limit_no_token():
+    rate = get_rate_limit("")
+    assert rate["limit"] == 60
+
+
+def test_get_rate_limit_token_nonexistent():
+    assert get_rate_limit("token_sbagliato") is None
+
+
+def test_get_rate_limit_token_none():
+    try:
+        get_rate_limit(None)
+        assert False
+    except TypeError:
+        assert True
