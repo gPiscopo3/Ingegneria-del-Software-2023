@@ -1,10 +1,13 @@
+import math
 from collections import Counter
 from typing import Dict
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
+from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
 import networkx as nx
 from datetime import datetime
+from src.gui.style import matplotlib_colors
 from src.logic.DataManagement import get_collaborations_since, get_communications_since
 from src.logic.Filters import collaborations_in_range, communications_in_range
 
@@ -25,14 +28,10 @@ def create_graph(owner: str, repo_name: str, starting_date: datetime, token: str
 
     G = nx.Graph()
 
-    # print("Occorrenze delle coppie di oggetti:")
     for coppia, conteggio in conteggi_totali.items():
 
         if conteggio > 0:
             G.add_edge(coppia[0].username, coppia[1].username, weight=conteggio)
-            print(f"{coppia[0].username, coppia[1].username}: {conteggio} volte")
-
-    # Creazione di un grafo non diretto
 
     return G, files
 
@@ -49,48 +48,85 @@ def create_graph_communication(owner: str, repo_name: str, starting_date: dateti
 
         if conteggio > 0:
             G.add_edge(coppia[0].username, coppia[1].username, weight=conteggio)
-            print(f"{coppia[0].username, coppia[1].username}: {conteggio} volte")
 
     return G, all_users
 
 
+MAX_EDGE_LABELS = 150  # oltre questa soglia le etichette dei pesi renderebbero il grafo illeggibile
+
+
 class GraphWidget(QWidget):
-    def __init__(self, G, flag: int, edge_color: []):
+    def __init__(self, G, flag: int, edge_color: [], dark: bool = True):
         super().__init__()
 
-        self.initUI(G, flag, edge_color)
+        self.initUI(G, flag, edge_color, dark)
 
-    def initUI(self, G, flag, edge_color):
+    def initUI(self, G, flag, edge_color, dark):
+        colors = matplotlib_colors(dark)
+
         # Creazione di un layout verticale per il widget
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        # Creazione della figura per il grafo
-        fig, ax = plt.subplots()
+        # Creazione della figura per il grafo (Figure e non pyplot, per non accumulare figure globali)
+        fig = Figure(facecolor=colors["background"])
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(colors["background"])
+        ax.set_axis_off()
         canvas = FigureCanvasQTAgg(fig)
+
+        # Toolbar per zoom, spostamento e salvataggio dell'immagine
+        toolbar = NavigationToolbar2QT(canvas, self)
+        layout.addWidget(toolbar)
         layout.addWidget(canvas)
 
-        labels = nx.get_edge_attributes(G, 'weight')
+        if G.number_of_nodes() == 0:
+            ax.text(0.5, 0.5, "Nessuna interazione nell'intervallo selezionato", ha='center', va='center',
+                    color=colors["text"], fontsize=11, transform=ax.transAxes)
+            return
 
         # Disegno del grafo sulla figura
-        pos = nx.circular_layout(G, scale=1.0)
+        pos = nx.spring_layout(G, seed=42, k=2 / math.sqrt(G.number_of_nodes()))
+        node_sizes = [300 + 120 * G.degree(n) for n in G.nodes]
+        weights = nx.get_edge_attributes(G, 'weight')
+        max_weight = max(weights.values(), default=1)
+        widths = [1 + 3 * weights.get(e, 1) / max_weight for e in G.edges]
+
         if flag == 1:
-            nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, node_color='skyblue', font_size=8)
-            nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)  # Aggiungi etichette degli archi
+            edge_colors = colors["edge"]
+        elif flag == 2:
+            edge_colors = colors["communications"]
+        else:
+            palette_map = {'blue': colors["collaborations"], 'red': colors["communications"],
+                           'purple': colors["composite"]}
+            edge_colors = [palette_map.get(c, c) for c in edge_color]
+
+        edge_options = dict(ax=ax, width=widths, edge_color=edge_colors, alpha=0.75, node_size=node_sizes)
         if flag == 2:
-            nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, node_color='skyblue', font_size=8,
-                    connectionstyle='arc3, rad = 0.05')
-            nx.draw_networkx_edge_labels(G, pos, edge_labels=labels, font_size=8,
-                                         label_pos=0.4)  # Aggiungi etichette degli archi
+            edge_options.update(arrows=True, arrowstyle='-|>', arrowsize=12, connectionstyle='arc3, rad = 0.08')
+        nx.draw_networkx_edges(G, pos, **edge_options)
+        nx.draw_networkx_nodes(G, pos, ax=ax, node_size=node_sizes, node_color=colors["node"],
+                               edgecolors=colors["node_border"], linewidths=1.5)
+        label_pos = {n: (x, y + 0.045) for n, (x, y) in pos.items()}  # etichette sopra i nodi
+        nx.draw_networkx_labels(G, label_pos, ax=ax, font_size=8, font_color=colors["text"],
+                                verticalalignment='bottom',
+                                bbox=dict(boxstyle='round,pad=0.2', fc=colors["label_bg"], ec='none', alpha=0.8))
+
+        if G.number_of_edges() <= MAX_EDGE_LABELS and flag != 3:
+            nx.draw_networkx_edge_labels(G, pos, ax=ax, edge_labels=weights, font_size=7,
+                                         font_color=colors["text"], label_pos=0.4 if flag == 2 else 0.5,
+                                         bbox=dict(boxstyle='round,pad=0.15', fc=colors["background"], ec='none'))
+
         if flag == 3:
-            #labels = ['comunicazioni', 'collaborazioni', 'entrambe']
-            nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, edge_color=edge_color, font_size=8)
-            legend_labels = ['Comunicazioni', 'Collaborazioni', 'Composito']
-            colors = {'Comunicazioni': 'red', 'Collaborazioni': 'blue', 'Composito': 'purple'}
-            legend_handles = [
-                plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[label], markersize=10, label=label)
-                for label in legend_labels]
-            plt.legend(handles=legend_handles, title="Tipi di collegamenti", loc='upper right')
-        layout.addWidget(canvas)
+            legend_labels = {'Collaborazioni': colors["collaborations"], 'Comunicazioni': colors["communications"],
+                             'Entrambe': colors["composite"]}
+            legend_handles = [Line2D([0], [0], color=color, linewidth=3, label=label)
+                              for label, color in legend_labels.items()]
+            legend = ax.legend(handles=legend_handles, title="Tipi di collegamenti", loc='best',
+                               facecolor=colors["label_bg"], edgecolor=colors["label_bg"], labelcolor=colors["text"])
+            legend.get_title().set_color(colors["text"])
+
+        fig.tight_layout()
 
 
 def create_composite_graph(owner: str, repo_name: str, starting_date: datetime, token: str, datai: datetime,
