@@ -1,8 +1,5 @@
-import sys
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, \
-    QDateEdit, QFormLayout, QCalendarWidget, QSizePolicy, QMessageBox, QGraphicsScene, QGraphicsView
-from PyQt6.QtCore import QDate, Qt
-import datetime as dt
+from PyQt6.QtWidgets import QWidget, QFormLayout, QDateEdit
+from PyQt6.QtCore import QDate
 
 
 class CalendarioApp(QWidget):
@@ -16,27 +13,25 @@ class CalendarioApp(QWidget):
     def initUI(self):
         self.setWindowTitle('Seleziona Intervallo Temporale')
 
-        # Layout principale
-        layout = QVBoxLayout()
-
         # FormLayout per le date di inizio e fine
-        form_layout = QFormLayout()
+        form_layout = QFormLayout(self)
+        form_layout.setContentsMargins(0, 0, 0, 0)
+        form_layout.setVerticalSpacing(8)
 
         # QDateEdit per la data di inizio
-        self.date_edit_inizio = QDateEdit(self)
-        self.date_edit_inizio.setDisplayFormat('yyyy-MM-dd')
-        self.date_edit_inizio.setCalendarPopup(True)
-        self.date_edit_inizio.setMinimumDate(self.datainizio)
-        self.date_edit_inizio.setMaximumDate(QDate.currentDate())
-        form_layout.addRow('Inizio:', self.date_edit_inizio)
+        self.date_edit_inizio = self.create_date_edit()
+        self.date_edit_inizio.setDate(self.date_edit_inizio.minimumDate())
+        form_layout.addRow('Dal', self.date_edit_inizio)
 
-        # QDateEdit per la data di fine
-        self.date_edit_fine = QDateEdit(self)
-        self.date_edit_fine.setDisplayFormat('yyyy-MM-dd')
-        self.date_edit_fine.setCalendarPopup(True)
-        self.date_edit_fine.setMinimumDate(self.datainizio)
-        self.date_edit_fine.setMaximumDate(QDate.currentDate())
-        form_layout.addRow('Fine:', self.date_edit_fine)
+        # QDateEdit per la data di fine, di default oggi
+        self.date_edit_fine = self.create_date_edit()
+        self.date_edit_fine.setDate(QDate.currentDate())
+        form_layout.addRow('Al', self.date_edit_fine)
 
-        layout.addLayout(form_layout)
-        self.setLayout(layout)
+    def create_date_edit(self):
+        date_edit = QDateEdit(self)
+        date_edit.setDisplayFormat('dd/MM/yyyy')
+        date_edit.setCalendarPopup(True)
+        date_edit.setMinimumDate(self.datainizio)
+        date_edit.setMaximumDate(QDate.currentDate())
+        return date_edit
