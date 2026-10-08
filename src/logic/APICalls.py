@@ -6,6 +6,7 @@ from requests.exceptions import MissingSchema
 from requests.utils import parse_header_links
 from datetime import datetime
 import requests
+from src.i18n import tr
 import threading
 import time
 
@@ -107,7 +108,7 @@ def build_header(token: str):
 def get_comments_by_number(owner: str, repo_name: str, kind: str, starting_date: datetime, header: Dict[str, str],
                            progress: Progress = None, until: Optional[datetime] = None) -> Dict[int, list]:
     url_key = "issue_url" if kind == "issues" else "pull_request_url"
-    label = "commenti" if kind == "issues" else "commenti di review"
+    label = tr("progress.comments") if kind == "issues" else tr("progress.review_comments")
     url = (BASE_URL + owner + '/' + repo_name + '/' + kind + '/comments?per_page=100&sort=created&direction=asc'
            '&since=' + starting_date.strftime(DATE_FORMAT))
     grouped: Dict[int, list] = {}
@@ -168,7 +169,7 @@ def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: 
             replies = replies | reformat_response(get_multiple_pages(url, header))
         return dict(sorted(replies.items()))
 
-    return parallel_map(pull_replies, results, progress, "Pull request")  # lista di dictionary
+    return parallel_map(pull_replies, results, progress, tr("progress.pull_requests"))  # lista di dictionary
 
 
 def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token: str, progress: Progress = None,
@@ -186,7 +187,7 @@ def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token
 
     # un commit raggiungibile da più branch viene scaricato una sola volta
     unique_commits = {}
-    for commits_of_branch in parallel_map(branch_commits, branches, progress, "Branch"):
+    for commits_of_branch in parallel_map(branch_commits, branches, progress, tr("progress.branches")):
         for commit in commits_of_branch:
             unique_commits.setdefault(commit["sha"], commit)
 
@@ -197,7 +198,7 @@ def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token
             print(e.response.text)
             return None
 
-    details = parallel_map(commit_details, unique_commits.values(), progress, "Commit")
+    details = parallel_map(commit_details, unique_commits.values(), progress, tr("progress.commits"))
     return [commit for commit in details if commit is not None]  # lista di dictionary
 
 
@@ -214,7 +215,7 @@ def get_rate_limit(token: str) -> Optional[Dict[str, int]]:
         value = response.headers.get("X-RateLimit-" + key.capitalize())
         if value is None or not value.isdigit():
             response.raise_for_status()  # errore del server senza header di quota
-            raise requests.RequestException("Header di rate limit mancanti nella risposta di GitHub")
+            raise requests.RequestException(tr("error.rate_headers"))
         rate[key] = int(value)
     update_last_rate_limit(response)
     return rate  # presente anche con quota esaurita (403), il token resta valido

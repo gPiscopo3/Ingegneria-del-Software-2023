@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 
 from requests import HTTPError
 
+from src.i18n import tr
 from src.logic import APICalls
 from src.logic.APICalls import DATE_FORMAT, BASE_URL, Progress, DownloadCancelled
 
@@ -21,8 +22,8 @@ GIT_URL = "https://github.com/"
 SHALLOW_MARGIN = timedelta(days=30)  # storia in più clonata prima della data di inizio
 NOREPLY = re.compile(r"^(\d+)\+([^@]+)@users\.noreply\.github\.com$", re.IGNORECASE)
 CLONE_PROGRESS = re.compile(r"(Counting objects|Compressing objects|Receiving objects|Resolving deltas):\s+(\d+)%")
-CLONE_PHASES = {"Counting objects": "preparazione su GitHub", "Compressing objects": "compressione su GitHub",
-                "Receiving objects": "ricezione oggetti", "Resolving deltas": "elaborazione"}
+CLONE_PHASES = {"Counting objects": "progress.clone_counting", "Compressing objects": "progress.clone_compressing",
+                "Receiving objects": "progress.clone_receiving", "Resolving deltas": "progress.clone_resolving"}
 RECORD, FIELD = "\x1e", "\x1f"
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # su Windows git non apre una console
 
@@ -83,7 +84,7 @@ def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token
             if "shallow info" in str(e):
                 return []  # nessun commit dopo la data di clone, quindi nemmeno nell'intervallo
             raise
-        _report(progress, "lettura della storia dei commit…")
+        _report(progress, tr("progress.reading_history"))
         log_file = os.path.join(directory, "log.txt")
         _run(["git", "-C", repo_dir, "log", "--all", *range_options, "--diff-merges=first-parent",
               "--name-only", "--format=" + RECORD + "%H" + FIELD + "%ae" + FIELD + "%aI"], log_file)
@@ -114,21 +115,23 @@ def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token
             print(e.response.text)
             return None
 
-    results.extend(c for c in APICalls.parallel_map(commit_from_api, boundary_commits, progress, "Commit di confine")
+    results.extend(c for c in APICalls.parallel_map(commit_from_api, boundary_commits, progress, tr("progress.boundary_commits"))
                    if c is not None)
     return results
 
 
 def clone(url: str, destination: str, shallow_since: datetime, token: str, progress: Progress = None):
-    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    # nessuna richiesta di credenziali: né nel terminale né con la finestra di Git Credential Manager, che
+    # bloccherebbe il clone finché qualcuno non la chiude; se l'accesso è negato git fallisce e si usano le API
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never")
     if token.strip() != "":
         # autenticazione via variabili d'ambiente: il token non compare nella riga di comando
         credentials = base64.b64encode(("x-access-token:" + token.strip()).encode()).decode()
         env.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="http.extraHeader",
                    GIT_CONFIG_VALUE_0="Authorization: Basic " + credentials)
-    command = ["git", "clone", "--bare", "--no-single-branch", "--filter=blob:none", "--no-tags", "--progress",
+    command = ["git", "-c", "credential.helper=", "clone", "--bare", "--no-single-branch", "--filter=blob:none", "--no-tags", "--progress",
                "--shallow-since=" + shallow_since.strftime("%Y-%m-%d"), url, destination]
-    _report(progress, "clone del repository…")
+    _report(progress, tr("progress.cloning"))
     _run(command, None, env, progress)
 
 
@@ -191,7 +194,8 @@ def map_authors(owner: str, repo_name: str, since: str, header: Dict[str, str], 
                 author = item.get("author")
                 authors[key] = {"id": author["id"], "login": author["login"]} if author else None
         url = APICalls.next_page_url(response)
-        _report(progress, f"autori dei commit {len(authors)}/{len(authors) + _unknown(authors, sample_sha)}")
+        _report(progress, tr("progress.commit_authors", done=len(authors),
+                                         total=len(authors) + _unknown(authors, sample_sha)))
 
     # 2) email rimaste (autori presenti solo su altri branch): un solo commit per email
     unknown = [key for key in sample_sha if key not in authors]
@@ -202,7 +206,7 @@ def map_authors(owner: str, repo_name: str, since: str, header: Dict[str, str], 
         author = response.json().get("author") if response.status_code == 200 else None
         return {"id": author["id"], "login": author["login"]} if author else None
 
-    for key, author in zip(unknown, APICalls.parallel_map(author_of, unknown, progress, "Autori")):
+    for key, author in zip(unknown, APICalls.parallel_map(author_of, unknown, progress, tr("progress.authors"))):
         authors[key] = author
     return authors
 
@@ -225,7 +229,7 @@ def _run(command: List[str], stdout_path: Optional[str], env=None, progress: Pro
     except OSError as e:
         if stdout_path:
             stdout.close()
-        raise GitError(f"impossibile eseguire git: {e}") from e
+        raise GitError(tr("error.git_run", error=e)) from e
 
     errors = []
 
@@ -239,8 +243,8 @@ def _run(command: List[str], stdout_path: Optional[str], env=None, progress: Pro
                 text = line.decode(errors="replace").strip()
                 match = CLONE_PROGRESS.search(text)
                 if match and progress is not None:
-                    phase = CLONE_PHASES[match.group(1)]
-                    progress(f"clone del repository: {phase} {match.group(2)}%", 0, 0)
+                    phase = tr(CLONE_PHASES[match.group(1)])
+                    progress(tr("progress.clone_phase", phase=phase, percent=match.group(2)), 0, 0)
                 elif text:
                     errors.append(text)
 
@@ -257,7 +261,7 @@ def _run(command: List[str], stdout_path: Optional[str], env=None, progress: Pro
         if stdout_path:
             stdout.close()
     if process.returncode != 0:
-        raise GitError("; ".join(errors[-3:]) or f"git terminato con codice {process.returncode}")
+        raise GitError("; ".join(errors[-3:]) or tr("error.git_exit", code=process.returncode))
 
 
 def _remove_readonly(func, path, _):

@@ -33,7 +33,7 @@ def sample_data():
 
 def test_collaboration_graph():
     files, users = sample_data()
-    g = Export.build_export_graph("collaborazioni", files, users, START, END)
+    g = Export.build_export_graph("collaboration", files, users, START, END)
     assert not g.is_directed()
     assert set(g.edges) == {("alice", "bob")} or set(g.edges) == {("bob", "alice")}
     assert g.edges["alice", "bob"]["weight"] == 1
@@ -42,7 +42,7 @@ def test_collaboration_graph():
 
 def test_communication_graph_directed_with_degrees():
     files, users = sample_data()
-    g = Export.build_export_graph("comunicazioni", files, users, START, END)
+    g = Export.build_export_graph("communication", files, users, START, END)
     assert g.is_directed()
     assert g.edges["carol", "bob"]["weight"] == 2
     assert g.edges["bob", "alice"]["weight"] == 1
@@ -52,7 +52,7 @@ def test_communication_graph_directed_with_degrees():
 
 def test_composite_graph_keeps_both_weights():
     files, users = sample_data()
-    g = Export.build_export_graph("composito", files, users, START, END)
+    g = Export.build_export_graph("composite", files, users, START, END)
     both = g.edges["alice", "bob"]  # collaborano e bob risponde ad alice
     assert (both["type"], both["weight_collaboration"], both["weight_communication"], both["weight"]) == \
            ("both", 1, 1, 2)
@@ -65,7 +65,7 @@ def test_composite_same_structure_as_shown_graph():
     data = load_data(EXAMPLE)
     start, end = dt.datetime(2023, 11, 15), dt.datetime(2023, 12, 18, 23, 59, 59)
     shown = create_composite_graph("o", "r", start, "", start, end, data["files"], data["users"])[0]
-    exported = Export.build_export_graph("composito", data["files"], data["users"], start, end)
+    exported = Export.build_export_graph("composite", data["files"], data["users"], start, end)
     assert set(map(frozenset, shown.edges)) == set(map(frozenset, exported.edges))
     assert set(shown.nodes) == set(exported.nodes)
 
@@ -77,7 +77,7 @@ def test_unknown_kind():
 
 def test_nodes_edges_csv(tmp_path):
     files, users = sample_data()
-    g = Export.build_export_graph("composito", files, users, START, END)
+    g = Export.build_export_graph("composite", files, users, START, END)
     nodes_path, edges_path = tmp_path / "nodes.csv", tmp_path / "edges.csv"
     Export.write_nodes_edges_csv(g, str(nodes_path), str(edges_path))
     with open(nodes_path, encoding="utf-8") as fp:
@@ -92,8 +92,8 @@ def test_nodes_edges_csv(tmp_path):
 
 def test_graphml_roundtrip(tmp_path):
     files, users = sample_data()
-    g = Export.build_export_graph("comunicazioni", files, users, START, END)
-    info = Export.graph_info("comunicazioni", "o", "r", START, END, True)
+    g = Export.build_export_graph("communication", files, users, START, END)
+    info = Export.graph_info("communication", "o", "r", START, END, True)
     path = str(tmp_path / "g.graphml")
     Export.write_graphml(g, path, info)
     back = nx.read_graphml(path)
@@ -106,23 +106,23 @@ def test_graphml_roundtrip(tmp_path):
 
 def test_mat_undirected_symmetric(tmp_path):
     files, users = sample_data()
-    g = Export.build_export_graph("composito", files, users, START, END)
+    g = Export.build_export_graph("composite", files, users, START, END)
     path = str(tmp_path / "g.mat")
-    Export.write_mat(g, path, Export.graph_info("composito", "o", "r", START, END, False))
+    Export.write_mat(g, path, Export.graph_info("composite", "o", "r", START, END, False))
     m = scipy.io.loadmat(path, squeeze_me=True)
     a = m["A"].toarray()
     assert (a == a.T).all()  # MATLAB graph() richiede una matrice simmetrica
     assert a.sum() == 2 * sum(w for _, _, w in g.edges(data="weight"))
     assert list(m["names"]) == list(g.nodes)
     assert "A_collaboration" in m and "A_communication" in m
-    assert m["info"]["graph_type"] == "composito"
+    assert m["info"]["graph_type"] == "composite"
 
 
 def test_mat_directed(tmp_path):
     files, users = sample_data()
-    g = Export.build_export_graph("comunicazioni", files, users, START, END)
+    g = Export.build_export_graph("communication", files, users, START, END)
     path = str(tmp_path / "g.mat")
-    Export.write_mat(g, path, Export.graph_info("comunicazioni", "o", "r", START, END, True))
+    Export.write_mat(g, path, Export.graph_info("communication", "o", "r", START, END, True))
     m = scipy.io.loadmat(path, squeeze_me=True)
     names = list(m["names"])
     a = m["A"].toarray()
@@ -151,7 +151,7 @@ def test_interactions_csv(tmp_path):
 
 def export_context():
     files, users = sample_data()
-    return {"owner": "o", "repo": "r", "kind": "composito", "start": START, "end": END, "files": files,
+    return {"owner": "o", "repo": "r", "kind": "composite", "start": START, "end": END, "files": files,
             "users": users}
 
 
@@ -193,3 +193,39 @@ def test_output_names():
 def test_export_no_modes(tmp_path):
     with pytest.raises(ValueError):
         Export.export_files(export_context(), [], str(tmp_path), "dati")
+
+
+def image_context(image_format="png"):
+    calls = []
+
+    def draw_image(path):
+        calls.append(path)
+        with open(path, "wb") as fp:
+            fp.write(b"immagine")
+
+    return dict(export_context(), draw_image=draw_image, image_format=image_format), calls
+
+
+def test_export_image_alone_uses_chosen_format(tmp_path):
+    context, calls = image_context("svg")
+    created = Export.export_files(context, ["image"], str(tmp_path), "dati")
+    assert created == [str(tmp_path / "dati.svg")]
+    assert calls == [str(tmp_path / "dati.svg")]
+    assert Export.output_names(["image"], "dati", "pdf") == ["dati.pdf"]
+
+
+def test_export_image_in_zip_with_other_modes(tmp_path):
+    import zipfile  # pylint: disable=import-outside-toplevel
+    context, _ = image_context("pdf")
+    created = Export.export_files(context, ["graphml", "image"], str(tmp_path), "dati")
+    assert created == [str(tmp_path / "dati.zip")]
+    with zipfile.ZipFile(created[0]) as archive:
+        assert sorted(archive.namelist()) == ["dati.graphml", "dati.pdf"]
+        assert archive.read("dati.pdf") == b"immagine"
+
+
+def test_export_image_unknown_format(tmp_path):
+    context, calls = image_context("bmp")
+    with pytest.raises(ValueError):
+        Export.export_files(context, ["image"], str(tmp_path), "dati")
+    assert calls == [] and os.listdir(tmp_path) == []

@@ -89,3 +89,39 @@ def test_get_commits_since_until_same_as_api():
 def test_get_commits_since_no_commits_in_range():
     # nessun commit dopo la data: git non riesce a fare il clone shallow, ma il risultato è semplicemente vuoto
     assert GitHistory.get_commits_since("fullmoonlullaby", "test", datetime(2026, 10, 1), TOKEN) == []
+
+
+def clone_call(token):
+    with patch.object(GitHistory, "_run") as run:
+        GitHistory.clone("https://github.com/o/r.git", "dest", DATE, token)
+    command, _, env, _ = run.call_args.args
+    return command, env
+
+
+def test_clone_never_asks_for_credentials():
+    # né richiesta nel terminale né finestra di Git Credential Manager: con credenziali rifiutate git deve fallire
+    command, env = clone_call("token-di-prova")
+    assert command[:4] == ["git", "-c", "credential.helper=", "clone"]
+    assert env["GIT_TERMINAL_PROMPT"] == "0"
+    assert env["GCM_INTERACTIVE"] == "never"
+
+
+def test_clone_token_only_in_environment():
+    command, env = clone_call("token-di-prova")
+    assert not any("token-di-prova" in part for part in command)
+    assert env["GIT_CONFIG_KEY_0"] == "http.extraHeader"
+    assert env["GIT_CONFIG_VALUE_0"].startswith("Authorization: Basic ")
+    _, env = clone_call("")
+    assert "GIT_CONFIG_COUNT" not in env or env.get("GIT_CONFIG_KEY_0") != "http.extraHeader"
+
+
+def test_clone_with_invalid_token_fails_quickly(tmp_path):
+    # credenziali rifiutate da GitHub: errore immediato (poi si usano le API), nessuna attesa di input
+    started = datetime.now()
+    try:
+        GitHistory.clone("https://github.com/apache/commons-io.git", str(tmp_path / "repo.git"), DATE,
+                         "token-non-valido")
+        assert False
+    except GitHistory.GitError:
+        pass
+    assert (datetime.now() - started).total_seconds() < 60
