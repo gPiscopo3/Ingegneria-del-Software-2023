@@ -14,7 +14,7 @@ tramite le API REST di GitHub e costruisce il grafo con
 [NetworkX](https://networkx.org/), visualizzandolo con [Matplotlib](https://matplotlib.org/) dentro
 un'interfaccia [PyQt6](https://www.riverbankcomputing.com/software/pyqt/).
 
-> Progetto realizzato per il corso di **Ingegneria del Software** (A.A. 2023).
+> Progetto realizzato per il corso di **Ingegneria del Software** (Università degli Studi del Sannio) (A.A. 2023) e successivamente migliorato con l'utilizzo di Claude Code.
 
 ![GraphApp – grafo composito, tema scuro](docs/screenshots/composito-scuro.png)
 
@@ -28,8 +28,10 @@ un'interfaccia [PyQt6](https://www.riverbankcomputing.com/software/pyqt/).
 - [Installazione](#installazione)
 - [Token GitHub](#token-github)
 - [Avvio e utilizzo](#avvio-e-utilizzo)
+  - [Esportare per l'analisi (R, MATLAB, Python)](#esportare-per-lanalisi-r-matlab-python)
 - [Architettura](#architettura)
 - [Salvataggio dei dati e rate limit](#salvataggio-dei-dati-e-rate-limit)
+  - [Consumo di quota API](#consumo-di-quota-api)
 - [Test e qualità del codice](#test-e-qualità-del-codice)
 - [Limiti noti](#limiti-noti)
 - [Licenza](#licenza)
@@ -43,6 +45,9 @@ un'interfaccia [PyQt6](https://www.riverbankcomputing.com/software/pyqt/).
   il grafo si ricalcola sui dati già scaricati, senza nuove chiamate alle API.
 - **Grafo leggibile**: layout force-directed, dimensione dei nodi proporzionale al numero di collegamenti,
   spessore degli archi proporzionale al peso, etichette con il numero di interazioni.
+- **Grafi grandi fluidi**: oltre 150 nodi il grafo viene disegnato in modo alleggerito (etichette solo per
+  i 40 nodi più collegati, nome di qualsiasi nodo al passaggio del mouse, archi diretti senza frecce oltre
+  300 collegamenti), così zoom e spostamento restano immediati anche con migliaia di elementi.
 - **Strumenti di esplorazione**: zoom, spostamento e salvataggio del grafo come immagine (PNG, SVG, PDF)
   dalla toolbar integrata.
 - **Interfaccia moderna**: sidebar con i parametri, statistiche del grafo (sviluppatori e collegamenti),
@@ -52,6 +57,9 @@ un'interfaccia [PyQt6](https://www.riverbankcomputing.com/software/pyqt/).
 - **Salvataggio e caricamento dei dati**: i dati scaricati da GitHub si salvano in un file `.graphapp`
   scelto dall'utente e si ricaricano in seguito (anche su un altro computer e senza token) per generare
   qualsiasi grafo senza nuove chiamate alle API.
+- **Consumo di quota ridotto**: con [Git](https://git-scm.com/downloads) installato i commit si leggono da
+  un clone locale temporaneo (nessuna richiesta API per commit); commenti e commenti di review si
+  scaricano in blocco per tutto il repository.
 - **Download parallelo e in background**: le richieste a GitHub partono su più thread e l'interfaccia
   resta utilizzabile, con l'avanzamento nella barra di stato e un pulsante per annullare.
 - **Gestione del rate limit**: in caso di limite raggiunto (primario o secondario) l'app attende il reset
@@ -84,6 +92,8 @@ Nel grafo composito i colori degli archi indicano il tipo di relazione:
 ## Installazione
 
 Requisiti: **Python 3.9 o superiore** e una connessione a Internet per scaricare i dati da GitHub.
+Consigliato: **[Git](https://git-scm.com/downloads)** nel `PATH`, indispensabile per i repository grandi
+(vedi [Consumo di quota API](#consumo-di-quota-api)).
 
 ```bash
 git clone https://github.com/gPiscopo3/Ingegneria-del-Software-2023.git
@@ -135,15 +145,23 @@ python -m src.main
 1. Inserisci **owner** e **nome** del repository (es. `apache` / `commons-io`).
 2. Incolla il tuo **token** e premi **Verifica**.
 3. Scegli il **tipo di grafo**: sotto il menu compare una breve descrizione.
-4. Imposta l'**intervallo temporale** (dal / al).
+4. Imposta l'**intervallo temporale** (dal / al): di default gli ultimi 3 mesi, ma si può scegliere
+   qualsiasi periodo, anche passato. **Vengono scaricati solo i dati di quell'intervallo.**
 5. Premi **Genera grafo**.
 
-Il primo caricamento di un repository può richiedere tempo (vengono scaricati tutti i commit di tutti i
-branch, le issue e le pull request con i relativi commenti). Il download avviene in background: la barra
+Il download riguarda solo l'intervallo scelto: commit, issue, pull request e commenti creati tra «Dal» e
+«Al». Più l'intervallo è ampio, più richieste servono: per i repository grandi conviene partire da un
+periodo breve (es. `tensorflow/tensorflow`, ultima settimana: ~550 richieste, meno di 3 minuti). Il download avviene in background: la barra
 di stato mostra l'avanzamento (es. `apache/commons-io · Collaborazioni · Commit 340/1.200`) e il pulsante
 diventa **Annulla download**; annullando, le parti già scaricate per intero (collaborazioni o
-comunicazioni) restano in memoria e si possono salvare. Finché l'app resta aperta, cambiando solo
-l'intervallo o tornando a un tipo di grafo già generato non viene fatta alcuna nuova richiesta.
+comunicazioni) restano in memoria e si possono salvare. Finché l'app resta aperta:
+
+- **restringere** l'intervallo o tornare a un tipo di grafo già generato non fa nuove richieste;
+- **allargarlo** oltre il periodo già scaricato avvia un nuovo download dell'intervallo scelto, che
+  sostituisce i dati in memoria (la barra di stato lo segnala).
+
+Nella card **Dati** è indicato il periodo scaricato per ciascuna parte, es.
+`apache/commons-io · collaborazioni ✓ 08/07/2026–08/10/2026 · comunicazioni ✕`.
 
 ### Salvare e ricaricare i dati
 
@@ -167,7 +185,72 @@ In [`data/examples/`](data/examples) ci sono i dati di esempio di `apache/common
 La barra di stato in basso mostra l'intervallo analizzato e la quota API residua.
 
 Nella toolbar sopra il grafo trovi: ripristino della vista, zoom, spostamento e salvataggio come
-immagine. Il pulsante in fondo alla sidebar passa dal tema scuro a quello chiaro.
+immagine. Passando il mouse su un nodo compaiono il nome dello sviluppatore e il numero di
+collegamenti.
+
+Con i grafi grandi (es. le comunicazioni di `tensorflow/tensorflow`: 1.360 nodi e 4.158 archi) il disegno
+è alleggerito: ogni zoom o spostamento richiede ~0,07 s invece di ~2,4 s. La disposizione dei nodi viene
+calcolata una sola volta (con meno iterazioni sui grafi con più di 300 nodi) e riutilizzata al cambio
+tema. Il pulsante in fondo alla sidebar passa dal tema scuro a quello chiaro.
+
+### Esportare per l'analisi (R, MATLAB, Python)
+
+GraphApp serve anche a **estrarre dati** da analizzare con gli strumenti di ricerca. Il pulsante
+**Esporta…** sopra il grafo esporta il grafo mostrato (repository, tipo e intervallo con cui è stato
+generato) e i dati grezzi da cui deriva. Si scelgono i file, la cartella e il nome; di default
+`owner_repo_tipo_AAAAMMGG-AAAAMMGG`. Se si seleziona **più di un formato**, tutti i file vengono raccolti in
+un **unico archivio `.zip`** (es. `apache_commons-io_composito_20231115-20231218.zip`); con un solo formato
+si ottengono i file singoli (per «Nodi e archi» i due CSV).
+
+| File | Contenuto | Uso tipico |
+|------|-----------|------------|
+| `…_nodes.csv` | `id`, `name` (login), `github_id`, `degree`, `strength` (grado pesato), `in_degree`/`out_degree` se diretto | tabella dei nodi |
+| `…_edges.csv` | `source`, `target`, `weight`; nel composito anche `weight_collaboration`, `weight_communication`, `type` (`collaboration`/`communication`/`both`) | tabella degli archi |
+| `….graphml` | grafo con gli stessi attributi, più repository, tipo, intervallo, definizioni di arco e peso e data di esportazione come attributi del grafo | igraph, NetworkX, Gephi, Cytoscape |
+| `….mat` | `A` (matrice di adiacenza sparsa pesata, simmetrica se non diretto), `names`, `github_ids`, `directed`, `source`/`target` (indici da 1), `weight`, struct `info`; nel composito anche `A_collaboration` e `A_communication` | MATLAB |
+| `…_edits.csv` | `developer`, `developer_id`, `file`, `timestamp`: una riga per modifica di un file | rete bipartita sviluppatore–file, analisi nel tempo |
+| `…_interactions.csv` | `source`, `source_id`, `target`, `target_id`, `timestamp`: una riga per risposta | reti temporali delle comunicazioni |
+
+Date in UTC (ISO 8601), file CSV in UTF-8 con intestazione. Definizioni:
+
+- **collaborazioni**: arco non diretto tra due sviluppatori che hanno modificato almeno un file in comune
+  nell'intervallo; peso = numero di file in comune;
+- **comunicazioni**: arco diretto `source → target` se `source` ha risposto (commento, review, commit in
+  PR) dopo un intervento di `target` nella stessa issue o PR; peso = numero di risposte;
+- **composito**: unione dei due, con i pesi tenuti separati (le comunicazioni sommano i due versi).
+
+I dati grezzi con data (`edits`, `interactions`) servono perché le misure calcolate su una rete aggregata
+nel tempo possono essere fuorvianti e dipendono dalla finestra scelta (Scholtes et al., *EPJ B* 2016):
+permettono di rifare l'aggregazione, usare finestre mobili o strumenti per reti temporali
+(networkDynamic/tsna in R, pathpy in Python), oppure costruire la rete bipartita sviluppatore–file.
+
+Caricamento:
+
+```r
+# R (igraph)
+library(igraph)
+nodes <- read.csv("apache_commons-io_composito_20231115-20231218_nodes.csv")
+edges <- read.csv("apache_commons-io_composito_20231115-20231218_edges.csv")
+g <- graph_from_data_frame(edges[, c("source", "target", setdiff(names(edges), c("source", "target")))],
+                           vertices = nodes[, c("name", setdiff(names(nodes), "name"))], directed = FALSE)
+# oppure
+g <- read_graph("apache_commons-io_composito_20231115-20231218.graphml", format = "graphml")
+```
+
+```matlab
+% MATLAB
+load("apache_commons-io_composito_20231115-20231218.mat")
+G = graph(A, names);          % comunicazioni: G = digraph(A, names)
+% oppure dalle tabelle
+T = readtable("apache_commons-io_composito_20231115-20231218_edges.csv", "TextType", "string");
+G = graph(table([T.source T.target], T.weight, 'VariableNames', {'EndNodes', 'Weight'}));
+```
+
+```python
+# Python (NetworkX)
+import networkx as nx
+g = nx.read_graphml("apache_commons-io_composito_20231115-20231218.graphml")
+```
 
 ## Architettura
 
@@ -175,6 +258,7 @@ immagine. Il pulsante in fondo alla sidebar passa dal tema scuro a quello chiaro
 src/
 ├── main.py                  # finestra principale (MainViewer): sidebar, area del grafo, gestione eventi
 ├── gui/
+│   ├── export_dialog.py     # dialog «Esporta…»: scelta dei file, cartella e nome
 │   ├── graph.py             # costruzione dei grafi NetworkX e GraphWidget (Matplotlib in Qt)
 │   ├── style.py             # temi scuro/chiaro: foglio di stile QSS, QPalette e colori dei grafi
 │   ├── widget_calendar.py   # selettore dell'intervallo temporale
@@ -182,6 +266,8 @@ src/
 ├── logic/
 │   ├── APICalls.py          # chiamate alle API REST di GitHub in parallelo, paginazione, rate limit
 │   ├── DataManagement.py    # costruzione di utenti/file dai dati grezzi, salvataggio/caricamento (.graphapp)
+│   ├── Export.py            # esportazione in CSV, GraphML, MATLAB (.mat) e dati grezzi con data
+│   ├── GitHistory.py        # commit dal clone git locale parziale (nessuna quota API), autori dei commit
 │   └── Filters.py           # filtro di collaborazioni e comunicazioni per intervallo di date
 └── model/
     ├── User.py              # utente e relative comunicazioni (data → destinatari)
@@ -204,19 +290,32 @@ flowchart LR
     NX --> W["GraphWidget<br/>Matplotlib + Qt"]
 ```
 
+### Card «Git · analisi dei commit»
+
+Nella sidebar, sotto l'autenticazione, una card mostra se Git è disponibile:
+
+| Badge | Significato |
+|-------|-------------|
+| ✓ Git 2.49.0 trovato · commit letti dal clone locale, quasi nessuna richiesta API | i commit si leggono dal clone locale |
+| ✕ Git non trovato · ogni commit costa 1 richiesta API | i commit si scaricano via API; compare il link **Scarica Git →** |
+
+Dopo aver installato Git basta premere **Ricontrolla**, senza riavviare l'app. Se Git manca e si genera un
+grafo che richiede le collaborazioni, l'app avvisa del maggior consumo di quota e chiede conferma.
+
 ### Endpoint GitHub utilizzati
 
 Tutte le richieste usano la versione **`2026-03-10`** delle API REST (header `X-GitHub-Api-Version`).
 
 | Dato | Endpoint |
 |------|----------|
-| Branch | `GET /repos/{owner}/{repo}/branches` |
-| Commit di ogni branch | `GET /repos/{owner}/{repo}/commits?sha={sha}&since={data}` |
-| File modificati da un commit | `GET /repos/{owner}/{repo}/commits/{sha}` |
+| Commit e file modificati (con Git) | clone `https://github.com/{owner}/{repo}.git`: nessuna quota API |
+| Autori dei commit (con Git) | `GET /repos/{owner}/{repo}/commits?since={data}` (100 per richiesta, interrotto appena tutti gli autori sono noti) e `GET /repos/{owner}/{repo}/commits/{sha}` per un solo commit di ogni autore rimasto sconosciuto |
+| Commit e file modificati (senza Git) | `GET /repos/{owner}/{repo}/branches`, `/commits?sha={sha}&since={data}`, `/commits/{sha}` per ogni commit |
 | Issue | `GET /repos/{owner}/{repo}/issues?state=all&since={data}` |
-| Commenti di una issue / PR | `GET /repos/{owner}/{repo}/issues/{n}/comments` |
+| Commenti di issue e PR (in blocco) | `GET /repos/{owner}/{repo}/issues/comments?since={data}` |
+| Commenti di review (in blocco) | `GET /repos/{owner}/{repo}/pulls/comments?since={data}` |
 | Pull request | `GET /repos/{owner}/{repo}/pulls?state=all` |
-| Review, commenti di review, commit di una PR | `GET /repos/{owner}/{repo}/pulls/{n}/reviews`, `/comments`, `/commits` |
+| Review e commit di una PR | `GET /repos/{owner}/{repo}/pulls/{n}/reviews`, `/pulls/{n}/commits` |
 | Verifica del token e quota | `GET /user` con token (1 richiesta; la quota si legge dagli header `X-RateLimit-*`, perché con alcuni token `/rate_limit` riporta sempre la quota piena), `GET /rate_limit` senza token |
 
 ## Salvataggio dei dati e rate limit
@@ -237,6 +336,36 @@ Tutte le richieste usano la versione **`2026-03-10`** delle API REST (header `X-
   l'attesa tutti i thread restano in pausa e la barra di stato mostra l'orario di ripresa. L'attesa si
   può interrompere con **Annulla download**. Per i repository grandi usa sempre un token.
 
+### Consumo di quota API
+
+Con un token il limite è di 5.000 richieste all'ora. Per far bastare la quota anche sui repository grandi:
+
+- **Commit dal clone locale**: con Git l'app esegue un clone parziale in una cartella temporanea
+  (`git clone --bare --no-single-branch --filter=blob:none --shallow-since=…`: tutti i branch, solo commit e
+  alberi dei file, nessun contenuto, solo dal mese precedente alla data di inizio) e legge i file
+  modificati con `git log --name-only`. Il clone non consuma quota API e la cartella viene cancellata alla
+  fine (anche se il download viene annullato). Le API servono solo ad associare le email degli autori agli
+  account GitHub: le email `id+login@users.noreply.github.com` non costano nulla, le altre si risolvono
+  con l'elenco dei commit (100 per richiesta) e, per gli autori rimasti, con un solo commit ciascuno.
+  Se il clone non riesce (git assente, rete, repository privato senza permessi) l'app usa le API.
+- **Commenti in blocco**: i commenti di issue e PR e i commenti di review si scaricano per tutto il
+  repository, 100 per richiesta, invece che issue per issue e PR per PR. Per ogni PR restano 2 richieste
+  (review e commit), per cui non esiste un endpoint a livello di repository.
+
+| Dato | Prima | Ora |
+|------|-------|-----|
+| Commit | 1 richiesta per commit + pagine di ogni branch | ~0 (clone) + 1 richiesta ogni 100 commit per gli autori, solo finché servono |
+| Pull request | 4 richieste per PR | 2 richieste per PR + commenti in blocco |
+| Issue | 1 richiesta per issue | commenti in blocco (100 per richiesta) |
+
+Esempi misurati: i commit di `apache/commons-io` degli ultimi 3 mesi costano **1 richiesta invece di
+107** (risultato identico); le comunicazioni dello stesso periodo **46 invece di 86**.
+
+La leva principale resta però **l'intervallo**: si scarica solo il periodo scelto («Dal»–«Al»). Per un
+periodo passato, gli elenchi ordinati per data (issue, commenti) si interrompono appena superano «Al», le
+PR create dopo «Al» non costano richieste aggiuntive e i commit si filtrano con `--until`. Gli errori di
+rete transitori (timeout, connessione interrotta) vengono ritentati automaticamente.
+
 ## Test e qualità del codice
 
 ```bash
@@ -255,11 +384,15 @@ copertura e analisi statica con pylint a ogni push.
 
 ## Limiti noti
 
-- Il caricamento iniziale richiede una chiamata API per ogni commit: oltre le 5.000 richieste (limite
-  orario con token) il download deve attendere il reset del limite, anche con le richieste in parallelo.
+- Ogni pull request costa ancora 2 richieste API (review e commit): su intervalli lunghi di repository con
+  molte PR (es. `tensorflow/tensorflow`, ~60.000 PR dal 15/11/2023) il download supera la quota oraria e
+  deve attendere i reset del limite. Senza Git anche ogni commit costa 1 richiesta.
+- L'elenco delle PR non si può filtrare per data lato GitHub: per un periodo passato si scorrono anche le
+  pagine delle PR più recenti (1 richiesta ogni 100 PR).
+- Il clone di repository molto grandi richiede spazio temporaneo su disco e tempo per la preparazione
+  lato GitHub.
 - Un file `.graphapp` è una fotografia dei dati al momento del download: per aggiornarli basta generare
   il grafo senza caricare il file (riaprendo l'app) e salvarli di nuovo.
-- I dati vengono scaricati a partire dal 15/11/2023, data minima selezionabile nel calendario.
 - Gli account GitHub eliminati (autore `null`) vengono ignorati.
 
 ## Licenza
