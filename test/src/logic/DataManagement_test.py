@@ -114,6 +114,33 @@ def test_save_load_data_partial(tmp_path):
     assert len(data["files"]) == 1
 
 
+def test_save_load_data_ranges(tmp_path):
+    files, users = create_sample_data()
+    files_range = (dt.datetime(2023, 12, 1), dt.datetime(2023, 12, 31, 23, 59, 59))
+    users_range = (dt.datetime(2023, 11, 1), dt.datetime(2023, 12, 15, 23, 59, 59))
+    path = str(tmp_path / "dati.graphapp")
+    save_data(path, owner, repo_name, starting_date, files, users, files_range, users_range)
+    data = load_data(path)
+    assert data["files_range"] == files_range
+    assert data["users_range"] == users_range
+    assert data["starting_date"] == dt.datetime(2023, 11, 1)  # inizio minimo tra le due parti
+    assert data["ending_date"] == dt.datetime(2023, 12, 31, 23, 59, 59)  # fine massima
+
+
+def test_load_data_without_ranges(tmp_path):
+    # file salvati prima degli intervalli: valgono da starting_date al salvataggio
+    files, _ = create_sample_data()
+    path = tmp_path / "vecchio.graphapp"
+    saved_at = dt.datetime(2024, 1, 10)
+    with open(path, 'wb') as fp:
+        pickle.dump({"format": "graphapp-data", "version": 1, "owner": owner, "repo": repo_name,
+                     "starting_date": starting_date, "saved_at": saved_at, "files": files, "users": None}, fp)
+    data = load_data(str(path))
+    assert data["files_range"] == (starting_date, saved_at)
+    assert data["users_range"] is None
+    assert data["ending_date"] == saved_at
+
+
 def test_save_data_nothing_to_save(tmp_path):
     path = tmp_path / "dati.graphapp"
     with pytest.raises(ValueError):
