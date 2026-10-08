@@ -1,0 +1,36 @@
+# Alla pubblicazione di un tag v* (es. v1.0.0) costruisce l'eseguibile Windows e lo allega alla GitHub Release
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows_executable:
+
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt pyinstaller==6.22.3
+    - name: Build executable
+      run: pyinstaller graphapp.spec --noconfirm
+    - name: Package
+      shell: pwsh
+      run: Compress-Archive -Path dist/GraphApp -DestinationPath "GraphApp-${{ github.ref_name }}-windows.zip"
+    - name: Publish release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: GraphApp-${{ github.ref_name }}-windows.zip
+        body_path: CHANGELOG.md

@@ -5,14 +5,11 @@ from typing import Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
+from src.i18n import tr, format_number
 from src.logic import APICalls
 from src.logic.DataManagement import get_collaborations_since, get_communications_since
 
 PROGRESS_INTERVAL = 0.1  # al massimo ~10 aggiornamenti al secondo verso la GUI
-
-
-def format_number(n: int):
-    return f"{n:,}".replace(",", ".")
 
 
 # scarica da GitHub, in un QThread separato, solo le parti di dati che mancano
@@ -58,14 +55,14 @@ class DownloadWorker(QObject):
         APICalls.rate_limit_listener = self.rate_limited.emit
         try:
             if self.need_files:
-                self.phase = "Collaborazioni"
-                self.progress.emit("Collaborazioni · avvio…")
+                self.phase = tr("progress.collaborations")
+                self.progress.emit(f"{self.phase} · {tr('progress.starting')}")
                 files = get_collaborations_since(self.owner, self.repo, self.starting_date, self.token, self.report,
                                                  self.until)
                 self.part_done.emit("files", files)
             if self.need_users:
-                self.phase = "Comunicazioni"
-                self.progress.emit("Comunicazioni · commenti, pull request e issue…")
+                self.phase = tr("progress.communications")
+                self.progress.emit(f"{self.phase} · {tr('progress.communications_start')}")
                 users = get_communications_since(self.owner, self.repo, self.starting_date, self.token, self.report,
                                                  self.until)
                 self.part_done.emit("users", users)

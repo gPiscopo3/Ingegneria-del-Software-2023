@@ -2,6 +2,7 @@ from src.model.File import File
 from src.model.User import User
 from typing import Dict, Optional, Set, Tuple
 from datetime import datetime
+from src.i18n import tr
 from src.logic import APICalls, GitHistory
 import pickle
 
@@ -15,7 +16,7 @@ def fetch_commits(owner: str, repo_name: str, starting_date: datetime, token: st
         except GitHistory.GitError as e:
             print(f"Clone non riuscito ({e}), uso delle API")
             if progress is not None:
-                progress("clone non riuscito, uso delle API…", 0, 0)
+                progress(tr("progress.clone_failed"), 0, 0)
     return APICalls.get_commits_since(owner, repo_name, starting_date, token, progress, until)
 
 
@@ -93,7 +94,7 @@ class _RestrictedUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
         if (module, name) in ALLOWED_CLASSES:
             return ALLOWED_CLASSES[(module, name)]
-        raise pickle.UnpicklingError(f"classe non consentita: {module}.{name}")
+        raise pickle.UnpicklingError(tr("file_error.class_not_allowed", name=f"{module}.{name}"))
 
 
 Range = Tuple[datetime, datetime]
@@ -104,7 +105,7 @@ def save_data(path: str, owner: str, repo_name: str, starting_date: datetime,
               files: Optional[Dict[str, File]], users: Optional[Dict[int, User]],
               files_range: Optional[Range] = None, users_range: Optional[Range] = None):
     if files is None and users is None:
-        raise ValueError("Nessun dato da salvare.")
+        raise ValueError(tr("file_error.nothing_to_save"))
     saved_at = datetime.now().replace(microsecond=0)
     ranges = [r for r, part in ((files_range, files), (users_range, users)) if r is not None and part is not None]
     data = {
@@ -130,20 +131,20 @@ def load_data(path: str):
         with open(path, 'rb') as fp:
             data = _RestrictedUnpickler(fp).load()
     except (pickle.UnpicklingError, EOFError, AttributeError, ValueError, TypeError, IndexError) as e:
-        raise ValueError(f"File non valido: non contiene dati di GraphApp ({e}).") from e
+        raise ValueError(tr("file_error.not_graphapp_detail", error=e)) from e
 
     if not isinstance(data, dict) or data.get("format") != DATA_FORMAT:
-        raise ValueError("File non valido: non contiene dati di GraphApp.")
+        raise ValueError(tr("file_error.not_graphapp"))
     if data.get("version") != DATA_VERSION:
-        raise ValueError(f"Versione del file non supportata: {data.get('version')}.")
+        raise ValueError(tr("file_error.version", version=data.get("version")))
     for key in ("owner", "repo"):
         if not isinstance(data.get(key), str) or data[key] == "":
-            raise ValueError(f"File non valido: campo «{key}» mancante.")
+            raise ValueError(tr("file_error.missing_field", field=key))
     for key in ("files", "users"):
         if data.get(key) is not None and not isinstance(data[key], dict):
-            raise ValueError(f"File non valido: campo «{key}» malformato.")
+            raise ValueError(tr("file_error.bad_field", field=key))
     if data.get("files") is None and data.get("users") is None:
-        raise ValueError("File non valido: non contiene né collaborazioni né comunicazioni.")
+        raise ValueError(tr("file_error.empty"))
 
     # file salvati prima dell'introduzione degli intervalli: valgono da starting_date al salvataggio
     start, end = data.get("starting_date"), data.get("ending_date") or data.get("saved_at")

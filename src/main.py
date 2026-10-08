@@ -3,12 +3,15 @@ import sys
 import datetime as dt
 
 import requests
-from PyQt6.QtCore import Qt, QThread
+from PyQt6.QtCore import Qt, QThread, QLocale, QTranslator, QLibraryInfo, QTimer
 from PyQt6.QtWidgets import (QWidget, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox, QApplication,
                              QLineEdit, QFormLayout, QComboBox, QFrame, QLabel, QScrollArea, QFileDialog)
 
+from src import __version__, i18n
+from src.i18n import tr
 from src.gui.export_dialog import run_export_dialog
-from src.gui.graph import create_graph, GraphWidget, create_graph_communication, create_composite_graph
+from src.gui.graph import (create_graph, GraphWidget, create_graph_communication, create_composite_graph,
+                           save_graph_image)
 from src.gui.style import apply_theme, palette
 from src.gui.widget_calendar import CalendarioApp
 from src.gui.worker import DownloadWorker
@@ -18,31 +21,44 @@ from src.logic.DataManagement import DATA_EXTENSION, save_data, load_data, activ
 TOKEN_URL = "https://github.com/settings/personal-access-tokens/new"
 GIT_URL = "https://git-scm.com/downloads"
 
+# tipi di grafo: chiave (anche nei file esportati) -> chiavi di traduzione di titolo e descrizione
 GRAPH_TYPES = {
-    "collaborazioni": ("Grafo delle collaborazioni",
-                       "Collega gli sviluppatori che hanno modificato gli stessi file. "
-                       "Il peso indica quanti file hanno in comune."),
-    "comunicazioni": ("Grafo delle comunicazioni",
-                      "Grafo diretto: un arco A → B indica che A ha risposto a B in issue, "
-                      "pull request, review o commenti."),
-    "composito": ("Grafo composito",
-                  "Sovrappone i due grafi: blu le collaborazioni, rosso le comunicazioni, "
-                  "viola le coppie presenti in entrambi."),
+    "collaboration": ("graph.collaboration.title", "graph.collaboration.description"),
+    "communication": ("graph.communication.title", "graph.communication.description"),
+    "composite": ("graph.composite.title", "graph.composite.description"),
 }
 
-DATA_FILTER = f"Dati GraphApp (*{DATA_EXTENSION})"
-EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "examples")
+# radice del progetto, o la cartella dei file inclusi quando l'app gira come eseguibile (PyInstaller)
+APP_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+EXAMPLES_DIR = os.path.join(APP_DIR, "data", "examples")
+
+_qt_translator = None  # traduzioni dei testi standard di Qt (pulsanti Sì/No, dialog dei file)
 
 
-def format_number(n: int):
-    return f"{n:,}".replace(",", ".")
+def install_qt_translator(app: QApplication, code: str):
+    global _qt_translator  # pylint: disable=global-statement
+    if _qt_translator is not None:
+        try:
+            app.removeTranslator(_qt_translator)
+        except RuntimeError:
+            pass  # già distrutto insieme a una QApplication precedente
+        _qt_translator = None
+    translator = QTranslator()
+    if translator.load(f"qtbase_{code}", QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)):
+        app.installTranslator(translator)
+        _qt_translator = translator
+
+
+def data_filter():
+    return tr("data.file_filter", extension=DATA_EXTENSION)
 
 
 def quota_text(rate: dict):
     # es. "2.038/5.000 richieste · rinnovo alle 16:27"
-    text = f"{format_number(rate['remaining'])}/{format_number(rate['limit'])} richieste"
+    text = tr("quota.requests", remaining=i18n.format_number(rate['remaining']),
+              limit=i18n.format_number(rate['limit']))
     if "reset" in rate:
-        text += f" · rinnovo alle {dt.datetime.fromtimestamp(rate['reset']).strftime('%H:%M')}"
+        text += " · " + tr("quota.reset", time=i18n.format_time(dt.datetime.fromtimestamp(rate['reset'])))
     return text
 
 
@@ -98,27 +114,34 @@ class MainViewer(QMainWindow):
         # esito dell'ultima verifica del token (il token resta solo in memoria)
         self.verified_token = None
         self.token_valid = None
+        self.last_rate = None  # ultima quota nota, per ridisegnare il badge (es. al cambio di lingua)
         self.git_version = None  # versione di git trovata (None se non disponibile)
 
-        self.setWindowTitle('GraphApp')
+        self.setWindowTitle(f'GraphApp {__version__}')
         self.resize(1280, 800)
         self.setMinimumSize(980, 640)
 
-        central = QWidget()
-        central.setObjectName("central")
-        self.setCentralWidget(central)
-        root = QHBoxLayout(central)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
-        root.addWidget(self.build_sidebar())
-        root.addWidget(self.build_content(), 1)
-
-        self.statusBar().showMessage("Pronto")
+        self.build_ui()
+        self.statusBar().showMessage(tr("status.ready"))
         self.update_token_badge()
         self.check_git()
         self.update_data_status()
 
     # ---------- costruzione interfaccia ----------
+
+    def build_ui(self):
+        central = QWidget()
+        central.setObjectName("central")
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self.build_sidebar())
+        root.addWidget(self.build_content(), 1)
+        # l'interfaccia precedente si distrugge solo dopo l'evento in corso (es. il segnale del selettore di lingua)
+        previous = self.takeCentralWidget()
+        self.setCentralWidget(central)
+        if previous is not None:
+            previous.deleteLater()
 
     def build_sidebar(self):
         sidebar = QFrame()
@@ -140,27 +163,44 @@ class MainViewer(QMainWindow):
 
         title = QLabel("GraphApp")
         title.setObjectName("title")
-        subtitle = QLabel("Analisi delle interazioni tra gli sviluppatori di un repository GitHub")
+        subtitle = QLabel(tr("app.subtitle"))
         subtitle.setObjectName("subtitle")
         subtitle.setWordWrap(True)
-        layout.addWidget(title)
+        # lingua e tema in alto, accanto al titolo; le lingue sono i file in src/locales
+        self.language_choice = QComboBox()
+        self.language_choice.setToolTip(tr("language.tooltip"))
+        for code, name in i18n.available_languages().items():
+            self.language_choice.addItem(name, code)
+        self.language_choice.setCurrentIndex(max(0, self.language_choice.findData(i18n.language())))
+        self.language_choice.currentIndexChanged.connect(self.on_language_changed)
+        self.theme_button = QPushButton()
+        self.theme_button.setObjectName("ghost")
+        self.theme_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.theme_button.clicked.connect(self.toggle_theme)
+        self.update_theme_button()
+        title_row = QHBoxLayout()
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        title_row.addWidget(self.language_choice)
+        title_row.addWidget(self.theme_button)
+        layout.addLayout(title_row)
         layout.addWidget(subtitle)
 
         # Repository
         self.owner = QLineEdit()
-        self.owner.setPlaceholderText("es. apache")
+        self.owner.setPlaceholderText(tr("repository.owner_placeholder"))
         self.repo_name = QLineEdit()
-        self.repo_name.setPlaceholderText("es. commons-io")
+        self.repo_name.setPlaceholderText(tr("repository.name_placeholder"))
         repo_form = QFormLayout()
         repo_form.setVerticalSpacing(8)
-        repo_form.addRow("Owner", self.owner)
-        repo_form.addRow("Nome", self.repo_name)
-        layout.addWidget(card(section_label("Repository"), repo_form))
+        repo_form.addRow(tr("repository.owner"), self.owner)
+        repo_form.addRow(tr("repository.name"), self.repo_name)
+        layout.addWidget(card(section_label(tr("repository.section")), repo_form))
 
         # Dati: salvataggio e caricamento espliciti dei dati scaricati
-        self.load_button = QPushButton("Carica dati…")
+        self.load_button = QPushButton(tr("data.load"))
         self.load_button.clicked.connect(self.load_data_file)
-        self.save_button = QPushButton("Salva dati…")
+        self.save_button = QPushButton(tr("data.save"))
         self.save_button.clicked.connect(self.save_data_file)
         data_row = QHBoxLayout()
         data_row.setSpacing(6)
@@ -169,16 +209,16 @@ class MainViewer(QMainWindow):
         self.data_status = QLabel()
         self.data_status.setObjectName("hint")
         self.data_status.setWordWrap(True)
-        layout.addWidget(card(section_label("Dati"), data_row, self.data_status))
+        layout.addWidget(card(section_label(tr("data.section")), data_row, self.data_status))
         self.owner.textChanged.connect(self.update_data_status)
         self.repo_name.textChanged.connect(self.update_data_status)
 
         # Autenticazione GitHub
         self.token = QLineEdit()
-        self.token.setPlaceholderText("Personal access token")
+        self.token.setPlaceholderText(tr("token.placeholder"))
         self.token.setEchoMode(QLineEdit.EchoMode.Password)
         self.token.textChanged.connect(self.on_token_changed)
-        self.show_token_button = QPushButton("Mostra")
+        self.show_token_button = QPushButton(tr("token.show"))
         self.show_token_button.setObjectName("ghost")
         self.show_token_button.setCheckable(True)
         self.show_token_button.setFixedWidth(80)
@@ -188,7 +228,7 @@ class MainViewer(QMainWindow):
         token_row.addWidget(self.token, 1)
         token_row.addWidget(self.show_token_button)
 
-        self.verify_button = QPushButton("Verifica")
+        self.verify_button = QPushButton(tr("token.verify"))
         self.verify_button.clicked.connect(self.verify_token)
         self.token_badge = QLabel()
         self.token_badge.setObjectName("badge")
@@ -198,60 +238,53 @@ class MainViewer(QMainWindow):
         self.token_link.setOpenExternalLinks(True)
         self.token_link.setWordWrap(True)
         self.update_token_link()
-        token_hint = QLabel("Il token resta in memoria solo finché l'app è aperta.")
+        token_hint = QLabel(tr("token.memory_hint"))
         token_hint.setObjectName("hint")
         token_hint.setWordWrap(True)
-        layout.addWidget(card(section_label("Autenticazione GitHub"), token_row, self.verify_button,
+        layout.addWidget(card(section_label(tr("token.section")), token_row, self.verify_button,
                               self.token_badge, self.token_link, token_hint))
 
         # Git: con git i commit si leggono da un clone locale, senza consumare quota API
         self.git_badge = QLabel()
         self.git_badge.setObjectName("badge")
         self.git_badge.setWordWrap(True)
-        git_hint = QLabel("Con Git i commit si leggono da un clone locale temporaneo invece che dalle API: "
-                          "indispensabile per i repository grandi.")
+        git_hint = QLabel(tr("git.hint"))
         git_hint.setObjectName("hint")
         git_hint.setWordWrap(True)
         self.git_link = QLabel()
         self.git_link.setObjectName("hint")
         self.git_link.setOpenExternalLinks(True)
         self.update_git_link()
-        self.git_button = QPushButton("Ricontrolla")
+        self.git_button = QPushButton(tr("git.recheck"))
         self.git_button.setObjectName("ghost")
         self.git_button.clicked.connect(self.check_git)
         git_row = QHBoxLayout()
         git_row.addWidget(self.git_link, 1)
         git_row.addWidget(self.git_button)
-        layout.addWidget(card(section_label("Git · analisi dei commit"), self.git_badge, git_hint, git_row))
+        layout.addWidget(card(section_label(tr("git.section")), self.git_badge, git_hint, git_row))
 
         # Tipo di grafo
         self.choice = QComboBox()
-        for key, (title, _) in GRAPH_TYPES.items():
-            self.choice.addItem(title, key)
+        for key, (title_key, _) in GRAPH_TYPES.items():
+            self.choice.addItem(tr(title_key), key)
         self.choice_description = QLabel()
         self.choice_description.setObjectName("hint")
         self.choice_description.setWordWrap(True)
         self.choice.currentIndexChanged.connect(self.update_choice_description)
         self.update_choice_description()
-        layout.addWidget(card(section_label("Tipo di grafo"), self.choice, self.choice_description))
+        layout.addWidget(card(section_label(tr("graph.section")), self.choice, self.choice_description))
 
         # Intervallo temporale
         self.calendario_widget = CalendarioApp()
-        layout.addWidget(card(section_label("Intervallo temporale"), self.calendario_widget))
+        layout.addWidget(card(section_label(tr("interval.section")), self.calendario_widget))
 
-        self.update_button = QPushButton("Genera grafo")
+        self.update_button = QPushButton(tr("action.generate"))
         self.update_button.setObjectName("primary")
         self.update_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.update_button.clicked.connect(self.on_update_clicked)
         layout.addWidget(self.update_button)
 
         layout.addStretch(1)
-
-        self.theme_button = QPushButton()
-        self.theme_button.setObjectName("ghost")
-        self.theme_button.clicked.connect(self.toggle_theme)
-        self.update_theme_button()
-        layout.addWidget(self.theme_button)
         return sidebar
 
     def build_content(self):
@@ -262,7 +295,7 @@ class MainViewer(QMainWindow):
         layout.setSpacing(14)
 
         header = QHBoxLayout()
-        self.graph_title = QLabel("Nessun grafo")
+        self.graph_title = QLabel(tr("graph.none"))
         self.graph_title.setObjectName("graphTitle")
         self.repo_chip = QLabel()
         self.nodes_chip = QLabel()
@@ -274,9 +307,9 @@ class MainViewer(QMainWindow):
             chip.hide()
             header.addWidget(chip)
         # esportazione del grafo mostrato e dei dati grezzi per R, MATLAB e Python
-        self.export_button = QPushButton("Esporta…")
+        self.export_button = QPushButton(tr("export.button"))
         self.export_button.setObjectName("ghost")
-        self.export_button.setToolTip("Esporta il grafo e i dati grezzi in CSV, GraphML e MATLAB (.mat)")
+        self.export_button.setToolTip(tr("export.button_tooltip"))
         self.export_button.clicked.connect(self.export_graph)
         self.export_button.hide()
         header.addWidget(self.export_button)
@@ -289,6 +322,7 @@ class MainViewer(QMainWindow):
         self.empty_state = self.build_empty_state()
         self.graph_layout.addWidget(self.empty_state)
         layout.addWidget(self.graph_card, 1)
+        self.graph_widget = None  # il widget del grafo precedente è stato distrutto con l'interfaccia
         return content
 
     def build_empty_state(self):
@@ -297,10 +331,9 @@ class MainViewer(QMainWindow):
         layout.addStretch(1)
         icon = QLabel("◎")
         icon.setObjectName("emptyIcon")
-        title = QLabel("Nessun grafo da mostrare")
+        title = QLabel(tr("empty.title"))
         title.setObjectName("emptyTitle")
-        hint = QLabel("Inserisci owner e nome di un repository, scegli il tipo di grafo e l'intervallo,\n"
-                      "poi premi «Genera grafo».")
+        hint = QLabel(tr("empty.hint"))
         hint.setObjectName("subtitle")
         for w in (icon, title, hint):
             w.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -308,23 +341,71 @@ class MainViewer(QMainWindow):
         layout.addStretch(1)
         return empty
 
+    # ---------- lingua ----------
+
+    def on_language_changed(self):
+        code = self.language_choice.currentData()
+        if code is None or code == i18n.language():
+            return
+        i18n.set_language(code)
+        install_qt_translator(QApplication.instance(), code)
+        QTimer.singleShot(0, self.retranslate)  # dopo la fine del segnale: il selettore viene ricostruito
+
+    def retranslate(self):
+        # ricostruisce l'interfaccia nella nuova lingua mantenendo ciò che l'utente ha inserito o generato
+        owner, repo, token = self.owner.text(), self.repo_name.text(), self.token.text()
+        token_shown = self.show_token_button.isChecked()
+        choice = self.choice.currentData()
+        start = self.calendario_widget.date_edit_inizio.date()
+        end = self.calendario_widget.date_edit_fine.date()
+        verified_token, token_valid, last_rate = self.verified_token, self.token_valid, self.last_rate
+        if self.graph_widget is not None:
+            self.graph_widget.release()  # libera subito la figura: il widget viene distrutto con l'interfaccia
+
+        self.build_ui()
+
+        for widget in (self.owner, self.repo_name, self.token):
+            widget.blockSignals(True)  # niente reset della verifica del token né dello stato dei dati
+        self.owner.setText(owner)
+        self.repo_name.setText(repo)
+        self.token.setText(token)
+        for widget in (self.owner, self.repo_name, self.token):
+            widget.blockSignals(False)
+        self.show_token_button.setChecked(token_shown)
+        self.choice.setCurrentIndex(self.choice.findData(choice))
+        self.verified_token, self.token_valid = verified_token, token_valid
+
+        self.applied_range_key = None
+        self.apply_data_range()  # limiti e periodo disponibile del file caricato, nella nuova lingua
+        self.calendario_widget.date_edit_inizio.setDate(start)
+        self.calendario_widget.date_edit_fine.setDate(end)
+
+        self.update_token_badge(last_rate)
+        self.update_git_badge()
+        self.update_data_status()
+        if self.current_graph is not None:
+            self.show_graph()
+            self.update_graph_header()
+        self.statusBar().showMessage(tr("status.ready"))
+
     # ---------- interazioni ----------
 
     def update_choice_description(self):
-        self.choice_description.setText(GRAPH_TYPES[self.choice.currentData()][1])
+        self.choice_description.setText(tr(GRAPH_TYPES[self.choice.currentData()][1]))
 
     def toggle_token_visibility(self, visible: bool):
         self.token.setEchoMode(QLineEdit.EchoMode.Normal if visible else QLineEdit.EchoMode.Password)
-        self.show_token_button.setText("Nascondi" if visible else "Mostra")
+        self.show_token_button.setText(tr("token.hide") if visible else tr("token.show"))
 
     def update_token_link(self):
         color = palette(self.dark)["accent"]
         self.token_link.setText(f'<a style="color:{color}; text-decoration:none" href="{TOKEN_URL}">'
-                                f'Come creare un token →</a> (fine-grained, sola lettura)')
+                                f'{tr("token.create_link")}</a> {tr("token.create_hint")}')
 
     def on_token_changed(self):
         self.verified_token = None
         self.token_valid = None
+        self.last_rate = None
         self.update_token_badge()
 
     def set_badge(self, text: str, state: str, badge: QLabel = None):
@@ -336,29 +417,35 @@ class MainViewer(QMainWindow):
 
     def update_git_link(self):
         color = palette(self.dark)["accent"]
-        self.git_link.setText(f'<a style="color:{color}; text-decoration:none" href="{GIT_URL}">Scarica Git →</a>')
+        self.git_link.setText(f'<a style="color:{color}; text-decoration:none" href="{GIT_URL}">'
+                              f'{tr("git.download_link")}</a>')
 
     def check_git(self):
         GitHistory.refresh_path()  # git appena installato: non serve riavviare l'app
         self.git_version = GitHistory.git_version()
+        self.update_git_badge()
+
+    def update_git_badge(self):
         if self.git_version is not None:
-            self.set_badge(f"✓ Git {self.git_version} trovato · commit letti dal clone locale, "
-                           "quasi nessuna richiesta API", "ok", self.git_badge)
+            self.set_badge(tr("git.found", version=self.git_version), "ok", self.git_badge)
             self.git_link.hide()
         else:
-            self.set_badge("✕ Git non trovato · ogni commit costa 1 richiesta API", "error", self.git_badge)
+            self.set_badge(tr("git.not_found"), "error", self.git_badge)
             self.git_link.show()
 
     def update_token_badge(self, rate=None):
+        if rate is not None:
+            self.last_rate = dict(rate)
         if self.token.text().strip() == "":
             if rate is not None:
-                self.set_badge(f"Nessun token · {quota_text(rate)}", "error" if rate["remaining"] == 0 else "neutral")
+                self.set_badge(tr("token.none_quota", quota=quota_text(rate)),
+                               "error" if rate["remaining"] == 0 else "neutral")
             else:
-                self.set_badge("Nessun token · limite di 60 richieste/ora", "neutral")
+                self.set_badge(tr("token.none"), "neutral")
         elif self.token_valid is None:
-            self.set_badge("Token non ancora verificato", "neutral")
+            self.set_badge(tr("token.not_verified"), "neutral")
         elif self.token_valid:
-            text = "✓ Autenticato"
+            text = tr("token.authenticated")
             state = "ok"
             if rate is not None:
                 text += f" · {quota_text(rate)}"
@@ -366,7 +453,7 @@ class MainViewer(QMainWindow):
                     state = "error"  # token valido ma quota esaurita fino al rinnovo
             self.set_badge(text, state)
         else:
-            self.set_badge("✕ Token non valido o scaduto", "error")
+            self.set_badge(tr("token.invalid"), "error")
 
     def verify_token(self):
         token = self.token.text()
@@ -374,7 +461,7 @@ class MainViewer(QMainWindow):
         try:
             rate = APICalls.get_rate_limit(token)
         except requests.RequestException:
-            self.set_badge("Impossibile contattare GitHub", "error")
+            self.set_badge(tr("token.unreachable"), "error")
             return False
         finally:
             QApplication.restoreOverrideCursor()
@@ -385,38 +472,30 @@ class MainViewer(QMainWindow):
 
     def validate_input(self):
         if self.owner.text().strip() == "" or self.repo_name.text().strip() == "":
-            QMessageBox.warning(self, "Dati mancanti", "Inserisci owner e nome del repository.")
+            QMessageBox.warning(self, tr("validate.missing.title"), tr("validate.missing.text"))
             return False
 
         if self.calendario_widget.date_edit_inizio.date() > self.calendario_widget.date_edit_fine.date():
-            QMessageBox.warning(self, "Errore di selezione",
-                                "La data di inizio deve essere precedente o uguale alla data di fine.")
+            QMessageBox.warning(self, tr("validate.dates.title"), tr("validate.dates.text"))
             return False
 
         if not self.needs_download():
             return True  # i dati sono già in memoria: il token non serve
 
         if self.missing_parts()[0] and self.git_version is None:
-            answer = QMessageBox.question(self, "Git non trovato",
-                                          "Git non è installato (o non è nel PATH): i commit verranno scaricati "
-                                          "via API, con 1 richiesta per ogni commit, e per i repository grandi "
-                                          "la quota oraria può non bastare.\n\nPer usare il clone locale "
-                                          "installa Git e premi «Ricontrolla».\n\nContinuare comunque?")
+            answer = QMessageBox.question(self, tr("validate.no_git.title"), tr("validate.no_git.text"))
             if answer != QMessageBox.StandardButton.Yes:
                 return False
 
         if self.token.text().strip() == "":
-            answer = QMessageBox.question(self, "Nessun token",
-                                          "Senza token il limite è di 60 richieste/ora, insufficiente per "
-                                          "repository grandi.\n\nContinuare comunque?")
+            answer = QMessageBox.question(self, tr("validate.no_token.title"), tr("validate.no_token.text"))
             return answer == QMessageBox.StandardButton.Yes
 
         # verifica automatica se il token non è stato ancora verificato (in caso di errore di rete si prosegue)
         if self.verified_token != self.token.text():
             self.verify_token()
         if self.token_valid is False:
-            QMessageBox.critical(self, "Token non valido",
-                                 "GitHub ha rifiutato il token inserito. Controlla che sia corretto e non scaduto.")
+            QMessageBox.critical(self, tr("validate.invalid_token.title"), tr("validate.invalid_token.text"))
             return False
         return True
 
@@ -441,8 +520,8 @@ class MainViewer(QMainWindow):
     def missing_parts(self):
         # (servono le collaborazioni, servono le comunicazioni) per il tipo di grafo e l'intervallo scelti
         choice = self.choice.currentData()
-        need_files = choice in ("collaborazioni", "composito") and not self.covers(self.files_key, self.files_range)
-        need_users = choice in ("comunicazioni", "composito") and not self.covers(self.users_key, self.users_range)
+        need_files = choice in ("collaboration", "composite") and not self.covers(self.files_key, self.files_range)
+        need_users = choice in ("communication", "composite") and not self.covers(self.users_key, self.users_range)
         return need_files, need_users
 
     def needs_download(self):
@@ -452,7 +531,7 @@ class MainViewer(QMainWindow):
         if self.download_thread is not None:  # durante un download il pulsante lo annulla
             APICalls.cancel_event.set()
             self.update_button.setEnabled(False)
-            self.update_button.setText("Annullamento in corso…")
+            self.update_button.setText(tr("action.cancelling"))
             return
         self.update_graph()
 
@@ -487,18 +566,19 @@ class MainViewer(QMainWindow):
         self.download_worker.cancelled.connect(self.on_download_cancelled)
 
         self.set_busy(True)
-        message = f"Recupero dei dati di {owner}/{repo} dal {start.strftime('%d/%m/%Y')} al {end.strftime('%d/%m/%Y')}…"
+        message = tr("status.downloading", repo=f"{owner}/{repo}", start=i18n.format_date(start),
+                     end=i18n.format_date(end))
         if (need_files and self.files_key == key) or (need_users and self.users_key == key):
-            message = "L'intervallo scelto non è coperto dai dati in memoria: nuovo download. " + message
+            message = tr("status.redownload") + " " + message
         self.statusBar().showMessage(message)
         self.download_thread.start()
 
     def set_busy(self, busy: bool):
         for w in (self.owner, self.repo_name, self.token, self.show_token_button, self.verify_button, self.choice,
-                  self.calendario_widget, self.load_button, self.git_button):
+                  self.calendario_widget, self.load_button, self.git_button, self.language_choice):
             w.setEnabled(not busy)
         self.update_button.setEnabled(True)
-        self.update_button.setText("Annulla download" if busy else "Genera grafo")
+        self.update_button.setText(tr("action.cancel_download") if busy else tr("action.generate"))
         self.update_data_status()
 
     def stop_download_thread(self):
@@ -519,8 +599,8 @@ class MainViewer(QMainWindow):
                 self.update_token_badge(rate)
 
     def on_rate_limited(self, seconds: int):
-        resume = (dt.datetime.now() + dt.timedelta(seconds=seconds)).strftime('%H:%M')
-        self.statusBar().showMessage(f"Limite API raggiunto: il download riprende alle {resume}")
+        resume = i18n.format_time(dt.datetime.now() + dt.timedelta(seconds=seconds))
+        self.statusBar().showMessage(tr("status.rate_limited", time=resume))
 
     def on_part_done(self, kind: str, data):
         key = (self.download_worker.owner, self.download_worker.repo)
@@ -538,12 +618,12 @@ class MainViewer(QMainWindow):
 
     def on_download_failed(self, error: str):
         self.stop_download_thread()
-        QMessageBox.critical(self, "Errore", f"Impossibile scaricare i dati:\n{error}")
-        self.statusBar().showMessage("Errore durante il download dei dati")
+        QMessageBox.critical(self, tr("error.title"), tr("error.download", error=error))
+        self.statusBar().showMessage(tr("status.download_error"))
 
     def on_download_cancelled(self):
         self.stop_download_thread()
-        self.statusBar().showMessage("Download annullato: i dati già scaricati completamente restano in memoria")
+        self.statusBar().showMessage(tr("status.download_cancelled"))
 
     def closeEvent(self, event):  # pylint: disable=invalid-name
         if self.download_thread is not None:
@@ -556,8 +636,6 @@ class MainViewer(QMainWindow):
         # costruisce il grafo con i dati già in memoria (nessuna chiamata alle API)
         owner, repo = key = self.current_key()
         choice = self.choice.currentData()
-        qinizio = self.calendario_widget.date_edit_inizio.date()
-        qfine = self.calendario_widget.date_edit_fine.date()
         data_inizio, data_fine = self.selected_range()
         files = self.files if self.files_key == key else None
         users = self.users if self.users_key == key else None
@@ -565,10 +643,10 @@ class MainViewer(QMainWindow):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             edge_color = None
-            if choice == "collaborazioni":
+            if choice == "collaboration":
                 g, _ = create_graph(owner, repo, data_inizio, "", data_inizio, data_fine, files)
                 flag = 1
-            elif choice == "comunicazioni":
+            elif choice == "communication":
                 g, _ = create_graph_communication(owner, repo, data_inizio, "", data_inizio, data_fine, users)
                 flag = 2
             else:
@@ -576,25 +654,37 @@ class MainViewer(QMainWindow):
                                                              data_fine, files, users)
                 flag = 3
         except Exception as e:  # pylint: disable=broad-except
-            QMessageBox.critical(self, "Errore", f"Impossibile generare il grafo:\n{e}")
-            self.statusBar().showMessage("Errore durante la generazione del grafo")
+            QMessageBox.critical(self, tr("error.title"), tr("error.graph", error=e))
+            self.statusBar().showMessage(tr("status.graph_error"))
             return
         finally:
             QApplication.restoreOverrideCursor()
 
         self.current_graph = (g, flag, edge_color, None)  # disposizione dei nodi calcolata al primo disegno
         self.show_graph()
-        self.graph_title.setText(GRAPH_TYPES[choice][0])
-        self.repo_chip.setText(f"{owner}/{repo}")
-        self.nodes_chip.setText(f"{g.number_of_nodes()} sviluppatori")
-        self.edges_chip.setText(f"{g.number_of_edges()} collegamenti")
-        for chip in (self.repo_chip, self.nodes_chip, self.edges_chip):
-            chip.show()
+        pos = self.current_graph[3]  # stessa disposizione del grafo mostrato anche nell'immagine esportata
+
+        def draw_image(path, dark=False):
+            # titolo nella lingua attiva al momento dell'esportazione
+            title = tr("image.title", repo=f"{owner}/{repo}", graph=tr(GRAPH_TYPES[choice][0]),
+                       start=i18n.format_date(data_inizio), end=i18n.format_date(data_fine))
+            save_graph_image(path, g, flag, edge_color, pos, title, dark)
+
         # contesto del grafo mostrato: l'esportazione resta coerente anche se poi si cambia il calendario
         self.graph_context = {"owner": owner, "repo": repo, "kind": choice, "start": data_inizio,
-                              "end": data_fine, "files": files, "users": users}
+                              "end": data_fine, "files": files, "users": users, "draw_image": draw_image}
+        self.update_graph_header()
+        self.show_rate_limit_status(data_inizio, data_fine)
+
+    def update_graph_header(self):
+        g, context = self.current_graph[0], self.graph_context
+        self.graph_title.setText(tr(GRAPH_TYPES[context["kind"]][0]))
+        self.repo_chip.setText(f"{context['owner']}/{context['repo']}")
+        self.nodes_chip.setText(tr("graph.developers", count=i18n.format_number(g.number_of_nodes())))
+        self.edges_chip.setText(tr("graph.links", count=i18n.format_number(g.number_of_edges())))
+        for chip in (self.repo_chip, self.nodes_chip, self.edges_chip):
+            chip.show()
         self.export_button.show()
-        self.show_rate_limit_status(qinizio, qfine)
 
     def export_graph(self):
         if self.graph_context is None:
@@ -604,9 +694,11 @@ class MainViewer(QMainWindow):
             created, count = result
             folder = os.path.dirname(created[0])
             if created[0].endswith(".zip"):
-                self.statusBar().showMessage(f"Esportato {os.path.basename(created[0])} ({count} file) in {folder}")
+                self.statusBar().showMessage(tr("status.exported_zip", name=os.path.basename(created[0]),
+                                                count=count, folder=folder))
             else:
-                self.statusBar().showMessage(f"{count} file esportat{'o' if count == 1 else 'i'} in {folder}")
+                self.statusBar().showMessage(tr("status.exported_one" if count == 1 else "status.exported_many",
+                                                count=count, folder=folder))
 
     def show_graph(self):
         if self.current_graph is None:
@@ -627,15 +719,15 @@ class MainViewer(QMainWindow):
         self.current_graph = (g, flag, edge_color, self.graph_widget.pos)
         self.graph_layout.addWidget(self.graph_widget)
 
-    def show_rate_limit_status(self, qinizio, qfine):
-        message = f"Intervallo: {qinizio.toString('dd/MM/yyyy')} – {qfine.toString('dd/MM/yyyy')}"
+    def show_rate_limit_status(self, start: dt.datetime, end: dt.datetime):
+        message = tr("status.interval", start=i18n.format_date(start), end=i18n.format_date(end))
         rate = APICalls.last_rate_limit
         if "remaining" in rate and "limit" in rate:
-            message += f"   ·   Quota API: {quota_text(rate)}"
+            message += "   ·   " + tr("status.quota", quota=quota_text(rate))
             if self.token_valid or self.token.text().strip() == "":
                 self.update_token_badge(dict(rate))
         else:
-            message += "   ·   Dati già in memoria"
+            message += "   ·   " + tr("status.data_in_memory")
         self.statusBar().showMessage(message)
 
     # ---------- salvataggio e caricamento dei dati ----------
@@ -651,10 +743,10 @@ class MainViewer(QMainWindow):
             return
         start, end, activity = self.data_range
         self.calendario_widget.set_range(start, end)
-        hint = f"Dati disponibili dal {start.strftime('%d/%m/%Y')} al {end.strftime('%d/%m/%Y')}"
+        hint = tr("interval.available", start=i18n.format_date(start), end=i18n.format_date(end))
         if activity is not None:
-            hint += (f" · attività registrata dal {activity[0].strftime('%d/%m/%Y')} "
-                     f"al {activity[1].strftime('%d/%m/%Y')}")
+            hint += " · " + tr("interval.activity", start=i18n.format_date(activity[0]),
+                               end=i18n.format_date(activity[1]))
         self.calendario_widget.set_hint(hint)
 
     def update_data_status(self):
@@ -664,20 +756,20 @@ class MainViewer(QMainWindow):
         has_users = self.users is not None and self.users_key == key
         self.save_button.setEnabled((has_files or has_users) and self.download_thread is None)
         if not (has_files or has_users):
-            self.data_status.setText("Nessun dato in memoria per questo repository: genera un grafo per "
-                                     "scaricarli da GitHub, oppure carica un file salvato in precedenza.")
+            self.data_status.setText(tr("data.status_empty"))
             return
+
         def part(name, present, data_range):
             if not present:
                 return f"{name} ✕"
             if data_range is None:
                 return f"{name} ✓"
-            return f"{name} ✓ {data_range[0].strftime('%d/%m/%Y')}–{data_range[1].strftime('%d/%m/%Y')}"
+            return f"{name} ✓ {i18n.format_date(data_range[0])}–{i18n.format_date(data_range[1])}"
 
-        text = (f"{key[0]}/{key[1]} · {part('collaborazioni', has_files, self.files_range)} · "
-                f"{part('comunicazioni', has_users, self.users_range)}")
+        text = (f"{key[0]}/{key[1]} · {part(tr('data.collaborations'), has_files, self.files_range)} · "
+                f"{part(tr('data.communications'), has_users, self.users_range)}")
         if self.data_date is not None:
-            text += f" · dati del {self.data_date.strftime('%d/%m/%Y %H:%M')}"
+            text += " · " + tr("data.date", date=i18n.format_datetime(self.data_date))
         self.data_status.setText(text)
 
     def save_data_file(self):
@@ -687,7 +779,7 @@ class MainViewer(QMainWindow):
         files_range = self.files_range if files is not None else None
         users_range = self.users_range if users is not None else None
         default = os.path.join(os.path.expanduser("~"), f"{owner}_{repo}{DATA_EXTENSION}")
-        path, _ = QFileDialog.getSaveFileName(self, "Salva dati del repository", default, DATA_FILTER)
+        path, _ = QFileDialog.getSaveFileName(self, tr("data.save_title"), default, data_filter())
         if not path:
             return
         if not path.endswith(DATA_EXTENSION):
@@ -697,19 +789,19 @@ class MainViewer(QMainWindow):
             save_data(path, owner, repo, min(starts) if starts else self.selected_range()[0], files, users,
                       files_range, users_range)
         except (OSError, ValueError) as e:
-            QMessageBox.critical(self, "Errore", f"Impossibile salvare i dati:\n{e}")
+            QMessageBox.critical(self, tr("error.title"), tr("error.save", error=e))
             return
-        self.statusBar().showMessage(f"Dati di {owner}/{repo} salvati in {path}")
+        self.statusBar().showMessage(tr("status.saved", repo=f"{owner}/{repo}", path=path))
 
     def load_data_file(self):
         start_dir = EXAMPLES_DIR if os.path.isdir(EXAMPLES_DIR) else os.path.expanduser("~")
-        path, _ = QFileDialog.getOpenFileName(self, "Carica dati del repository", start_dir, DATA_FILTER)
+        path, _ = QFileDialog.getOpenFileName(self, tr("data.load_title"), start_dir, data_filter())
         if not path:
             return
         try:
             data = load_data(path)
         except (OSError, ValueError) as e:
-            QMessageBox.critical(self, "Errore", f"Impossibile caricare i dati:\n{e}")
+            QMessageBox.critical(self, tr("error.title"), tr("error.load", error=e))
             return
 
         key = (data["owner"], data["repo"])
@@ -731,9 +823,9 @@ class MainViewer(QMainWindow):
         self.repo_name.setText(data["repo"])
         self.apply_data_range(force=True)
         self.update_data_status()
-        message = f"Dati di {key[0]}/{key[1]} caricati da {os.path.basename(path)}"
+        message = tr("status.loaded", repo=f"{key[0]}/{key[1]}", file=os.path.basename(path))
         if self.data_range is not None:
-            message += f": disponibili dal {start.strftime('%d/%m/%Y')} al {end.strftime('%d/%m/%Y')}"
+            message += ": " + tr("status.loaded_range", start=i18n.format_date(start), end=i18n.format_date(end))
         self.statusBar().showMessage(message)
 
         # se il file contiene i dati per il tipo di grafo scelto, lo genera subito
@@ -741,7 +833,9 @@ class MainViewer(QMainWindow):
             self.update_graph()
 
     def update_theme_button(self):
-        self.theme_button.setText("☀  Tema chiaro" if self.dark else "☾  Tema scuro")
+        # solo l'icona, per lasciare spazio al selettore di lingua; il testo è nel tooltip
+        self.theme_button.setText("☀" if self.dark else "☾")
+        self.theme_button.setToolTip(tr("theme.light") if self.dark else tr("theme.dark"))
 
     def toggle_theme(self):
         self.dark = not self.dark
@@ -754,6 +848,9 @@ class MainViewer(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    # lingua del sistema, se tradotta (file in src/locales), altrimenti inglese
+    i18n.set_language(i18n.detect_language(QLocale.system().name()))
+    install_qt_translator(app, i18n.language())
     apply_theme(app, True)
     viewer = MainViewer()
     viewer.show()

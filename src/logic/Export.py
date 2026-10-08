@@ -11,6 +11,7 @@ import numpy as np
 import scipy.io
 import scipy.sparse
 
+from src.i18n import tr
 from src.logic.Filters import collaborations_in_range, communications_in_range
 from src.model.File import File
 from src.model.User import User
@@ -19,18 +20,20 @@ from src.model.User import User
 
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"  # ISO 8601, UTC
 
-KINDS = ("collaborazioni", "comunicazioni", "composito")
+# tipi di grafo, anche nei nomi dei file e nei metadati esportati: sempre in inglese, qualunque sia la lingua
+# dell'interfaccia, perché gli script di analisi non dipendano dalla lingua di chi ha esportato
+KINDS = ("collaboration", "communication", "composite")
 
 DEFINITIONS = {
-    "collaborazioni": ("arco non diretto tra due sviluppatori che hanno modificato almeno un file in comune "
-                       "nell'intervallo",
-                       "numero di file modificati da entrambi"),
-    "comunicazioni": ("arco diretto source -> target: source ha risposto (commento, review, commit in PR) dopo "
-                      "un intervento di target nella stessa issue o pull request",
-                      "numero di risposte"),
-    "composito": ("arco non diretto: unione di collaborazioni e comunicazioni (type = collaboration, "
-                  "communication o both)",
-                  "weight = weight_collaboration + weight_communication (comunicazioni sommate nei due versi)"),
+    "collaboration": ("undirected edge between two developers who modified at least one common file in the "
+                      "interval",
+                      "number of files modified by both"),
+    "communication": ("directed edge source -> target: source replied (comment, review, commit in a PR) after "
+                      "a contribution by target in the same issue or pull request",
+                      "number of replies"),
+    "composite": ("undirected edge: union of collaborations and communications (type = collaboration, "
+                  "communication or both)",
+                  "weight = weight_collaboration + weight_communication (communications summed in both directions)"),
 }
 
 
@@ -68,12 +71,12 @@ def github_ids(files: Optional[Dict[str, File]], users: Optional[Dict[int, User]
 def build_export_graph(kind: str, files: Optional[Dict[str, File]], users: Optional[Dict[int, User]],
                        start: datetime, end: datetime):
     if kind not in KINDS:
-        raise ValueError(f"tipo di grafo sconosciuto: {kind}")
-    if kind == "comunicazioni":
+        raise ValueError(f"unknown graph type: {kind}")
+    if kind == "communication":
         g = nx.DiGraph()
         for (source, target), weight in communication_weights(users, start, end).items():
             g.add_edge(source, target, weight=weight)
-    elif kind == "collaborazioni":
+    elif kind == "collaboration":
         g = nx.Graph()
         for (a, b), weight in collaboration_weights(files, start, end).items():
             g.add_edge(a, b, weight=weight)
@@ -113,7 +116,7 @@ def graph_info(kind: str, owner: str, repo: str, start: datetime, end: datetime,
         "edge_definition": edge_definition,
         "weight_definition": weight_definition,
         "exported_at": datetime.now(timezone.utc).strftime(TIMESTAMP_FORMAT),
-        "source": "GraphApp: GitHub REST API (issue, pull request, commenti, review) e clone git (commit)",
+        "source": "GraphApp: GitHub REST API (issues, pull requests, comments, reviews) and git clone (commits)",
     }
 
 
@@ -214,27 +217,41 @@ def write_interactions_csv(users: Dict[int, User], start: datetime, end: datetim
     return len(rows)
 
 
-# file prodotti da ciascuna modalità di esportazione (aggiunti al prefisso scelto dall'utente)
+# file prodotti da ciascuna modalità di esportazione (aggiunti al prefisso scelto dall'utente);
+# l'estensione dell'immagine dipende dal formato scelto
 EXPORT_SUFFIXES = {
     "csv": ["_nodes.csv", "_edges.csv"],
     "graphml": [".graphml"],
     "mat": [".mat"],
     "edits": ["_edits.csv"],
     "interactions": ["_interactions.csv"],
+    "image": [".{image_format}"],
 }
+IMAGE_FORMATS = ("png", "svg", "pdf")
 
 
-def file_names(keys, prefix: str):
-    return [prefix + suffix for key in EXPORT_SUFFIXES if key in keys for suffix in EXPORT_SUFFIXES[key]]
+def file_names(keys, prefix: str, image_format: str = "png"):
+    return [prefix + suffix.format(image_format=image_format)
+            for key in EXPORT_SUFFIXES if key in keys for suffix in EXPORT_SUFFIXES[key]]
 
 
 # nomi creati nella cartella: un unico .zip se le modalità sono più di una, altrimenti i file singoli
-def output_names(keys, prefix: str):
-    return [prefix + ".zip"] if len(keys) > 1 else file_names(keys, prefix)
+def output_names(keys, prefix: str, image_format: str = "png"):
+    return [prefix + ".zip"] if len(keys) > 1 else file_names(keys, prefix, image_format)
+
+
+def _image_format(context: Dict) -> str:
+    image_format = context.get("image_format", "png")
+    if image_format not in IMAGE_FORMATS:
+        raise ValueError(f"unsupported image format: {image_format}")
+    return image_format
 
 
 def _write_all(context: Dict, keys, base: str):
     start, end = context["start"], context["end"]
+    if "image" in keys:
+        # il disegno arriva dall'interfaccia (stessa disposizione del grafo mostrato): qui nessuna dipendenza da Qt
+        context["draw_image"](base + "." + _image_format(context))
     if any(k in keys for k in ("csv", "graphml", "mat")):
         g = build_export_graph(context["kind"], context["files"], context["users"], start, end)
         info = graph_info(context["kind"], context["owner"], context["repo"], start, end, g.is_directed())
@@ -254,10 +271,11 @@ def _write_all(context: Dict, keys, base: str):
 def export_files(context: Dict, keys, directory: str, prefix: str):
     keys = [key for key in EXPORT_SUFFIXES if key in keys]
     if not keys:
-        raise ValueError("Nessun formato selezionato.")
+        raise ValueError(tr("export.select_one"))
+    names = file_names(keys, prefix, _image_format(context) if "image" in keys else "png")
     if len(keys) == 1:
         _write_all(context, keys, os.path.join(directory, prefix))
-        return [os.path.join(directory, name) for name in file_names(keys, prefix)]
+        return [os.path.join(directory, name) for name in names]
 
     # più modalità: tutto in un unico zip, scritto a parte e poi rinominato per non lasciare file troncati
     zip_path = os.path.join(directory, prefix + ".zip")
@@ -266,7 +284,7 @@ def export_files(context: Dict, keys, directory: str, prefix: str):
         partial = zip_path + ".part"
         try:
             with zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-                for name in file_names(keys, prefix):
+                for name in names:
                     archive.write(os.path.join(work, name), arcname=name)
             os.replace(partial, zip_path)
         finally:
