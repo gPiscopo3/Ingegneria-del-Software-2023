@@ -23,6 +23,8 @@ Prima release pubblica. Rispetto alla versione presentata per il corso di Ingegn
   modo sicuro; dopo il caricamento il calendario si limita al periodo disponibile nel file.
 - Richieste parallele su 8 thread, con gestione dei limiti di GitHub (primario e secondario) e nuovi tentativi
   sugli errori di rete.
+- Review e commit delle pull request richiesti con le API GraphQL, 50 PR per query (con un token; altrimenti REST):
+  `microsoft/vscode`, 3 mesi: ~150 query invece di ~14.800 richieste.
 - Consumo di quota ridotto: commit letti da un clone git locale parziale (es. `apache/commons-io`, 3 mesi:
   1 richiesta invece di 107), commenti di issue e PR scaricati in blocco.
 
@@ -39,6 +41,10 @@ Prima release pubblica. Rispetto alla versione presentata per il corso di Ingegn
   usate e compatibili con le versioni recenti di Python e delle librerie.
 
 ### Correzioni
+- Le pull request create prima dell'intervallo ma con attività al suo interno ora sono incluse, come le issue (prima
+  contavano solo se create nell'intervallo).
+- Il download non si blocca più dopo il clone nei repository grandi: `git log` non rileva più i rename,
+  che scaricavano i contenuti dei file uno a uno (un file rinominato elenca ora entrambi i nomi).
 - Le modifiche allo stesso file e le risposte nella stessa issue o PR fatte nello stesso secondo da persone diverse
   non vanno più perse (prima si sovrascrivevano).
 - Formato dei dati `.graphapp` versione 2; i file salvati con la versione 1 vengono ancora letti e convertiti al
