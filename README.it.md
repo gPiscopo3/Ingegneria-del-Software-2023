@@ -366,18 +366,19 @@ grafo che richiede le collaborazioni, l'app avvisa del maggior consumo di quota 
 
 ### Endpoint GitHub utilizzati
 
-Tutte le richieste usano la versione **`2026-03-10`** delle API REST (header `X-GitHub-Api-Version`).
+Tutte le richieste usano la versione **`2026-03-10`** delle API REST (header `X-GitHub-Api-Version`); review e
+commit delle pull request usano anche le API GraphQL.
 
 | Dato | Endpoint |
 |------|----------|
 | Commit e file modificati (con Git) | clone `https://github.com/{owner}/{repo}.git`: nessuna quota API |
 | Autori dei commit (con Git) | `GET /repos/{owner}/{repo}/commits?since={data}` (100 per richiesta, interrotto appena tutti gli autori sono noti) e `GET /repos/{owner}/{repo}/commits/{sha}` per un solo commit di ogni autore rimasto sconosciuto |
 | Commit e file modificati (senza Git) | `GET /repos/{owner}/{repo}/branches`, `/commits?sha={sha}&since={data}`, `/commits/{sha}` per ogni commit |
-| Issue | `GET /repos/{owner}/{repo}/issues?state=all&since={data}` |
+| Issue e pull request attive nel periodo | `GET /repos/{owner}/{repo}/issues?state=all&since={data}` (un solo elenco, diviso in issue e PR) |
 | Commenti di issue e PR (in blocco) | `GET /repos/{owner}/{repo}/issues/comments?since={data}` |
 | Commenti di review (in blocco) | `GET /repos/{owner}/{repo}/pulls/comments?since={data}` |
-| Pull request | `GET /repos/{owner}/{repo}/pulls?state=all` |
-| Review e commit di una PR | `GET /repos/{owner}/{repo}/pulls/{n}/reviews`, `/pulls/{n}/commits` |
+| Review e commit delle PR (con token) | `POST /graphql`: una query ogni 50 PR |
+| Review e commit di una PR (senza token, o se GraphQL fallisce) | `GET /repos/{owner}/{repo}/pulls/{n}/reviews`, `/pulls/{n}/commits` |
 | Verifica del token e quota | `GET /user` con token (1 richiesta; la quota si legge dagli header `X-RateLimit-*`, perché con alcuni token `/rate_limit` riporta sempre la quota piena), `GET /rate_limit` senza token |
 
 ## Salvataggio dei dati e rate limit
@@ -411,13 +412,17 @@ Con un token il limite è di 5.000 richieste all'ora. Per far bastare la quota a
   con l'elenco dei commit (100 per richiesta) e, per gli autori rimasti, con un solo commit ciascuno.
   Se il clone non riesce (git assente, rete, repository privato senza permessi) l'app usa le API.
 - **Commenti in blocco**: i commenti di issue e PR e i commenti di review si scaricano per tutto il
-  repository, 100 per richiesta, invece che issue per issue e PR per PR. Per ogni PR restano 2 richieste
-  (review e commit), per cui non esiste un endpoint a livello di repository.
+  repository, 100 per richiesta, invece che issue per issue e PR per PR.
+- **Review e commit con GraphQL**: non esiste un endpoint REST a livello di repository (2 richieste per PR),
+  quindi con un token si chiedono 50 PR alla volta con le API GraphQL, che hanno una quota propria,
+  separata da quella REST. `microsoft/vscode`, 3 mesi (~7.400 PR): ~150 query invece di ~14.800
+  richieste. Senza token (GraphQL lo richiede), o per una PR con più di 100 review o commit, si usano gli
+  endpoint REST.
 
 | Dato | Prima | Ora |
 |------|-------|-----|
 | Commit | 1 richiesta per commit + pagine di ogni branch | ~0 (clone) + 1 richiesta ogni 100 commit per gli autori, solo finché servono |
-| Pull request | 4 richieste per PR | 2 richieste per PR + commenti in blocco |
+| Pull request | 4 richieste per PR | 1 query GraphQL ogni 50 PR + commenti in blocco (2 richieste per PR senza token) |
 | Issue | 1 richiesta per issue | commenti in blocco (100 per richiesta) |
 
 Esempi misurati: i commit di `apache/commons-io` degli ultimi 3 mesi costano **1 richiesta invece di
@@ -459,11 +464,11 @@ con lo zip allegato e le note del [CHANGELOG](CHANGELOG.md) (in italiano: [CHANG
 
 ## Limiti noti
 
-- Ogni pull request costa ancora 2 richieste API (review e commit): su intervalli lunghi di repository con
-  molte PR (es. `tensorflow/tensorflow`) un intervallo di molti mesi supera la quota oraria e il download
-  deve attendere i reset del limite. Senza Git anche ogni commit costa 1 richiesta.
-- L'elenco delle PR non si può filtrare per data lato GitHub: per un periodo passato si scorrono anche le
-  pagine delle PR più recenti (1 richiesta ogni 100 PR).
+- Senza token ogni pull request costa 2 richieste API (review e commit): su repository con molte PR un
+  intervallo di molti mesi supera la quota oraria. Senza Git anche ogni commit costa 1 richiesta.
+- GitHub non filtra issue e PR per data finale: per un periodo passato le pagine di quelle più recenti non
+  si richiedono (sono ordinate per creazione), ma tutte quelle create prima di «Al» e aggiornate dopo «Dal»
+  sì.
 - Il clone di repository molto grandi richiede spazio temporaneo su disco e tempo per la preparazione
   lato GitHub.
 - Un file `.graphapp` è una fotografia dei dati al momento del download: per aggiornarli basta generare

@@ -23,6 +23,8 @@ First public release. Compared with the version presented for the Software Engin
   after loading, the calendar is limited to the period available in the file.
 - Parallel requests on 8 threads, with handling of GitHub's limits (primary and secondary) and retries on
   network errors.
+- Reviews and commits of pull requests requested with the GraphQL API, 50 PRs per query (with a token; REST otherwise):
+  `microsoft/vscode`, 3 months: ~150 queries instead of ~14,800 requests.
 - Lower quota usage: commits read from a partial local git clone (e.g. `apache/commons-io`, 3 months:
   1 request instead of 107), issue and PR comments downloaded in bulk.
 
@@ -40,6 +42,10 @@ First public release. Compared with the version presented for the Software Engin
   compatible with recent versions of Python and the libraries.
 
 ### Fixed
+- Pull requests created before the interval but with activity inside it are now included, like issues (they were only taken
+  if created in the interval).
+- The download no longer hangs on large repositories after the clone: `git log` no longer detects renames, which
+  downloaded the file contents one by one (a renamed file now lists both names).
 - Commits on the same file and replies in the same issue or PR made in the same second by different people are no
   longer lost (they used to overwrite each other).
 - `.graphapp` data format version 2; files saved with version 1 are still read and converted on loading.
