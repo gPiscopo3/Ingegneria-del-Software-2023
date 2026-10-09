@@ -5,6 +5,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple
 from requests.exceptions import MissingSchema
 from requests.utils import parse_header_links
 from datetime import datetime
+import re
 import requests
 from src.i18n import tr
 import threading
@@ -15,10 +16,13 @@ DATE_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 API_URL = 'https://api.github.com'
 BASE_URL = API_URL + '/repos/'
 API_VERSION = '2026-03-10'
+GRAPHQL_URL = API_URL + '/graphql'
+GRAPHQL_BATCH = 50  # pull request per query GraphQL
 DEFAULT_HEADERS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": API_VERSION}
 MAX_RETRIES = 3
 MAX_WORKERS = 8  # richieste contemporanee
 MAX_REQUESTS_PER_SECOND = 12  # sotto il limite secondario di GitHub (~900 richieste/minuto)
+NOREPLY = re.compile(r"^(\d+)\+([^@]+)@users\.noreply\.github\.com$", re.IGNORECASE)
 
 # callback di avanzamento: (etichetta, elementi completati, totale)
 Progress = Optional[Callable[[str, int, int], None]]
@@ -167,21 +171,107 @@ def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: 
         issue_comments = get_comments_by_number(owner, repo_name, "issues", starting_date, header, progress, until)
     review_comments = get_comments_by_number(owner, repo_name, "pulls", starting_date, header, progress, until)
 
-    def pull_replies(pull):
-        # per le review e i commit non esiste un endpoint a livello di repository: 2 richieste per PR
-        # (tutti i commit della PR: quelli prima di starting_date contano come interventi precedenti)
-        pull_url = BASE_URL + owner + '/' + repo_name + '/pulls/' + str(pull["number"])
-        urls = [pull_url + '/reviews?per_page=100', pull_url + '/commits?per_page=100']
+    # review e commit: senza endpoint a livello di repository; con un token si chiedono con GraphQL, 50 PR per query
+    activity = pull_activity(owner, repo_name, [pull["number"] for pull in results], header, progress)
 
+    pulls = []
+    for pull in results:
         # "merge" delle risposte, ordinandole per data
         replies = [(datetime.strptime(pull["created_at"], DATE_FORMAT), pull["user"])]
         replies += reformat_response(issue_comments.get(pull["number"], []))
         replies += reformat_response(review_comments.get(pull["number"], []))
-        for url in urls:
-            replies += reformat_response(get_multiple_pages(url, header))
-        return sort_replies(replies)
+        replies += activity[pull["number"]]
+        pulls.append(sort_replies(replies))
+    return pulls  # lista di liste [(data, autore)]
 
-    return parallel_map(pull_replies, results, progress, tr("progress.pull_requests"))  # lista di liste [(data, autore)]
+
+# review e commit di ogni PR: {numero: [(data, autore)]}
+def pull_activity(owner: str, repo_name: str, numbers: List[int], header: Dict[str, str], progress: Progress = None) \
+        -> Dict[int, List[Tuple[datetime, dict]]]:
+    if not header:  # senza token GraphQL non è disponibile: 2 richieste REST per PR
+        replies = parallel_map(lambda number: rest_pull_replies(owner, repo_name, number, header), numbers, progress,
+                               tr("progress.pull_requests"))
+        return dict(zip(numbers, replies))
+
+    batches = [numbers[i:i + GRAPHQL_BATCH] for i in range(0, len(numbers), GRAPHQL_BATCH)]
+
+    def scaled(label, done, _total):  # avanzamento in PR e non in gruppi di PR
+        if progress is not None:
+            progress(label, min(done * GRAPHQL_BATCH, len(numbers)), len(numbers))
+
+    activity: Dict[int, List[Tuple[datetime, dict]]] = {}
+    for batch_result in parallel_map(lambda batch: graphql_pull_activity(owner, repo_name, batch, header), batches,
+                                     scaled, tr("progress.pull_requests")):
+        activity.update(batch_result)
+    return activity
+
+
+def rest_pull_replies(owner: str, repo_name: str, number: int, header: Dict[str, str]):
+    # tutti i commit della PR: quelli prima di starting_date contano come interventi precedenti
+    pull_url = BASE_URL + owner + '/' + repo_name + '/pulls/' + str(number)
+    replies = []
+    for url in (pull_url + '/reviews?per_page=100', pull_url + '/commits?per_page=100'):
+        replies += reformat_response(get_multiple_pages(url, header))
+    return replies
+
+
+PULL_FIELDS = """
+    reviews(first: 100) { pageInfo { hasNextPage } nodes { submittedAt
+        author { __typename login ... on User { databaseId } ... on Bot { databaseId } } } }
+    commits(first: 100) { pageInfo { hasNextPage } nodes { commit { committedDate
+        author { email user { databaseId login } } } } }"""
+
+
+# review e commit di un gruppo di PR con una sola query GraphQL; le PR che GraphQL non restituisce per intero
+# (più di 100 review o commit, PR non trovata) o l'intero gruppo se la richiesta fallisce passano da REST
+def graphql_pull_activity(owner: str, repo_name: str, numbers: List[int], header: Dict[str, str]):
+    query = ("query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { " +
+             " ".join(f"p{n}: pullRequest(number: {n}) {{ {PULL_FIELDS} }}" for n in numbers) + " } }")
+    try:
+        body = post_graphql(query, {"owner": owner, "name": repo_name}, header)
+        repository = (body.get("data") or {}).get("repository") or {}
+    except HTTPError:
+        repository = {}
+
+    activity = {}
+    for number in numbers:
+        replies = graphql_replies(repository.get(f"p{number}"))
+        if replies is None:
+            replies = rest_pull_replies(owner, repo_name, number, header)
+        activity[number] = replies
+    return activity
+
+
+# converte la risposta GraphQL di una PR nel formato di reformat_response; None se non è completa
+def graphql_replies(pull: Optional[dict]) -> Optional[List[Tuple[datetime, dict]]]:
+    if pull is None or pull["reviews"]["pageInfo"]["hasNextPage"] or pull["commits"]["pageInfo"]["hasNextPage"]:
+        return None
+    replies = []
+    for review in pull["reviews"]["nodes"]:
+        author = review.get("author")
+        if review.get("submittedAt") is None or author is None or author.get("databaseId") is None:
+            continue
+        login = author["login"] + ("[bot]" if author["__typename"] == "Bot" else "")  # come nelle API REST
+        replies.append((datetime.strptime(review["submittedAt"], DATE_FORMAT),
+                        {"id": author["databaseId"], "login": login}))
+    for node in pull["commits"]["nodes"]:
+        commit = node["commit"]
+        commit_author = commit.get("author") or {}
+        user = commit_author.get("user")
+        if user is not None and user.get("databaseId") is not None:
+            author = {"id": user["databaseId"], "login": user["login"]}
+        else:
+            author = noreply_author(commit_author.get("email") or "")  # bot e account senza profilo collegato
+        if author is not None:
+            replies.append((datetime.strptime(commit["committedDate"], DATE_FORMAT), author))
+    return replies
+
+
+def noreply_author(email: str) -> Optional[Dict]:
+    match = NOREPLY.match(email)
+    if match is None:
+        return None
+    return {"id": int(match.group(1)), "login": match.group(2)}
 
 
 def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token: str, progress: Progress = None,
@@ -294,6 +384,30 @@ def next_page_url(response: requests.Response):
 
 # richieste get con attesa integrata nel caso si raggiunga il ratelimit (primario o secondario)
 def get_with_ratelimit(url: str, header: Dict[str, str]):
+    return _request_with_ratelimit(url, header)
+
+
+# query GraphQL (POST); oltre ai limiti di get_with_ratelimit gestisce quello primario di GraphQL, che GitHub
+# segnala con HTTP 200 e un errore RATE_LIMITED. Solleva HTTPError se la richiesta fallisce
+def post_graphql(query: str, variables: dict, header: Dict[str, str]) -> dict:
+    body = {}
+    for _ in range(MAX_RETRIES):
+        response = _request_with_ratelimit(GRAPHQL_URL, header, {"query": query, "variables": variables})
+        response.raise_for_status()
+        body = response.json()
+        if not any(error.get("type") == "RATE_LIMITED" for error in body.get("errors") or []):
+            return body
+        seconds = max(0, int(response.headers.get("X-RateLimit-Reset", "0")) - int(time.time())) + 1
+        print(f"Rate limit GraphQL raggiunto, attesa di {seconds} secondi")
+        _throttle.pause(seconds)
+        if rate_limit_listener is not None:
+            rate_limit_listener(seconds)
+        if cancel_event.wait(seconds):
+            raise DownloadCancelled()
+    return body
+
+
+def _request_with_ratelimit(url: str, header: Dict[str, str], payload: Optional[dict] = None):
     headers = header.copy()
     headers.update(DEFAULT_HEADERS)
     try:
@@ -302,7 +416,10 @@ def get_with_ratelimit(url: str, header: Dict[str, str]):
                 raise DownloadCancelled()
             _throttle.acquire()
             try:
-                response = _session().get(url, headers=headers, timeout=30)
+                if payload is None:
+                    response = _session().get(url, headers=headers, timeout=30)
+                else:
+                    response = _session().post(url, headers=headers, json=payload, timeout=30)
             except (requests.ConnectionError, requests.Timeout):
                 # errore di rete transitorio: si riprova dopo 2, 4… secondi invece di interrompere il download
                 if attempt == MAX_RETRIES - 1:
@@ -343,6 +460,8 @@ def seconds_to_wait(response: requests.Response):
 
 
 def update_last_rate_limit(response: requests.Response):
+    if response.headers.get("X-RateLimit-Resource") == "graphql":
+        return  # la GUI mostra la quota REST, quella di GraphQL è separata
     with _rate_limit_lock:
         for key in ("limit", "remaining", "reset"):
             value = response.headers.get("X-RateLimit-" + key.capitalize())
