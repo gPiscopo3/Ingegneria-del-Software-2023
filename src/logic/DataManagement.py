@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from datetime import datetime
 from src.i18n import tr
 from src.logic import APICalls, GitHistory
+import os
 import pickle
 
 
@@ -82,8 +83,11 @@ def get_collaborations_since(owner: str, repo_name: str, starting_date: datetime
 # salvataggio e caricamento espliciti dei dati di un repository (file scelto dall'utente)
 
 DATA_FORMAT = "graphapp-data"
-DATA_VERSION = 2
-READABLE_VERSIONS = (1, 2)  # versione 1: File.modified_by come dict, convertito al caricamento
+DATA_VERSION = 3
+# versione 1: File.modified_by come dict, convertito al caricamento
+# versione 2: grafo di oggetti salvato direttamente (pickle ricorsivo: fallisce con molti utenti collegati)
+# versione 3: tabella degli utenti e riferimenti per indice (struttura piatta, senza limiti di profondità)
+READABLE_VERSIONS = (1, 2, 3)
 DATA_EXTENSION = ".graphapp"
 
 # uniche classi che un file di dati può contenere: caricare un pickle arbitrario eseguirebbe codice
@@ -106,6 +110,56 @@ class _RestrictedUnpickler(pickle.Unpickler):
 Range = Tuple[datetime, datetime]
 
 
+# Le comunicazioni collegano gli utenti tra loro: pickle, che visita il grafo in profondità, supera il limite di
+# ricorsione con molti utenti. Gli utenti vanno quindi in una tabella e i riferimenti diventano indici.
+# Gli utenti sono distinti per identità dell'oggetto: uno condiviso resta condiviso, due distinti restano distinti.
+def _flatten(files: Optional[Dict[str, File]], users: Optional[Dict[int, User]]):
+    table: List[User] = []
+    positions: Dict[int, int] = {}  # id dell'oggetto -> posizione in tabella
+
+    def position(user: User) -> int:
+        if id(user) not in positions:
+            positions[id(user)] = len(table)
+            table.append(user)
+        return positions[id(user)]
+
+    flat_files = None if files is None else {
+        key: (file.identifier, [(date, position(author)) for date, author in file.modified_by])
+        for key, file in files.items()}
+    flat_users = None if users is None else {key: position(user) for key, user in users.items()}
+
+    rows = []
+    i = 0
+    while i < len(table):  # la tabella cresce man mano che si incontrano i destinatari
+        user = table[i]
+        rows.append((user.identifier, user.username,
+                     [(date, [position(r) for r in receivers]) for date, receivers in user.communications.items()]))
+        i += 1
+    return rows, flat_files, flat_users
+
+
+def _rebuild(rows, flat_files, flat_users):
+    table = [User(identifier, username) for identifier, username, _ in rows]
+
+    def user_at(index):
+        if not isinstance(index, int) or not 0 <= index < len(table):
+            raise ValueError(f"indice utente non valido: {index}")
+        return table[index]
+
+    for user, (_, _, communications) in zip(table, rows):
+        for date, receivers in communications:
+            user.communications[date] = {user_at(r) for r in receivers}
+
+    files = None
+    if flat_files is not None:
+        files = {}
+        for key, (identifier, edits) in flat_files.items():
+            files[key] = File(identifier)
+            files[key].modified_by = [(date, user_at(author)) for date, author in edits]
+    users = None if flat_users is None else {key: user_at(index) for key, index in flat_users.items()}
+    return files, users
+
+
 # files_range / users_range: intervallo (inizio, fine) in cui è stata scaricata ciascuna parte
 def save_data(path: str, owner: str, repo_name: str, starting_date: datetime,
               files: Optional[Dict[str, File]], users: Optional[Dict[int, User]],
@@ -114,6 +168,7 @@ def save_data(path: str, owner: str, repo_name: str, starting_date: datetime,
         raise ValueError(tr("file_error.nothing_to_save"))
     saved_at = datetime.now().replace(microsecond=0)
     ranges = [r for r, part in ((files_range, files), (users_range, users)) if r is not None and part is not None]
+    table, flat_files, flat_users = _flatten(files, users)
     data = {
         "format": DATA_FORMAT,
         "version": DATA_VERSION,
@@ -122,14 +177,21 @@ def save_data(path: str, owner: str, repo_name: str, starting_date: datetime,
         "starting_date": min(r[0] for r in ranges) if ranges else starting_date,
         "ending_date": max(r[1] for r in ranges) if ranges else saved_at,
         "saved_at": saved_at,
-        "files": files,  # collaborazioni
-        "users": users,  # comunicazioni
+        "user_table": table,
+        "files": flat_files,  # collaborazioni
+        "users": flat_users,  # comunicazioni
         "files_range": files_range if files is not None else None,
         "users_range": users_range if users is not None else None,
     }
-    # un unico dump: gli utenti condivisi tra più file/comunicazioni restano lo stesso oggetto
-    with open(path, 'wb') as fp:
-        pickle.dump(data, fp, protocol=pickle.HIGHEST_PROTOCOL)
+    # scrittura su file temporaneo: se fallisce a metà, il file già presente non viene troncato
+    temp_path = path + ".tmp"
+    try:
+        with open(temp_path, 'wb') as fp:
+            pickle.dump(data, fp, protocol=pickle.HIGHEST_PROTOCOL)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 def load_data(path: str):
@@ -151,6 +213,12 @@ def load_data(path: str):
             raise ValueError(tr("file_error.bad_field", field=key))
     if data.get("files") is None and data.get("users") is None:
         raise ValueError(tr("file_error.empty"))
+    if data["version"] == 3:
+        try:
+            data["files"], data["users"] = _rebuild(data["user_table"], data["files"], data["users"])
+        except (KeyError, TypeError, ValueError, IndexError) as e:
+            raise ValueError(tr("file_error.not_graphapp_detail", error=e)) from e
+        del data["user_table"]
 
     # file salvati prima dell'introduzione degli intervalli: valgono da starting_date al salvataggio
     start, end = data.get("starting_date"), data.get("ending_date") or data.get("saved_at")
