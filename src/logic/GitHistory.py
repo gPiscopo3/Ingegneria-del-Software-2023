@@ -85,8 +85,9 @@ def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token
                 return []  # nessun commit dopo la data di clone, quindi nemmeno nell'intervallo
             raise
         _report(progress, tr("progress.reading_history"))
+        # --no-renames: il rilevamento dei rename scaricherebbe uno a uno i contenuti dei file (clone senza blob)
         log_file = os.path.join(directory, "log.txt")
-        _run(["git", "-C", repo_dir, "log", "--all", *range_options, "--diff-merges=first-parent",
+        _run(["git", "-C", repo_dir, "log", "--all", *range_options, "--diff-merges=first-parent", "--no-renames",
               "--name-only", "--format=" + RECORD + "%H" + FIELD + "%ae" + FIELD + "%aI"], log_file)
         with open(log_file, encoding="utf-8", errors="replace") as fp:
             commits = parse_log(fp.read())

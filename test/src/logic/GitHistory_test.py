@@ -129,3 +129,17 @@ def test_clone_with_invalid_token_fails_quickly(tmp_path):
         GitHistory.clone("https://github.com/apache/commons-io.git", str(tmp_path / "repo.git"), DATE,
                          "token-non-valido")
     assert (datetime.now() - started).total_seconds() < 60
+
+
+def test_git_log_without_rename_detection():
+    # il clone non ha i blob: con il rilevamento dei rename git li scaricherebbe uno a uno e il download si blocca
+    def fake_run(_command, stdout_path, *_):
+        open(stdout_path, "w", encoding="utf-8").close()  # git log senza commit
+
+    with patch.object(GitHistory, "clone"), patch.object(GitHistory, "_run", side_effect=fake_run) as run, \
+            patch.object(GitHistory, "read_shallow", return_value=set()), \
+            patch.object(GitHistory, "map_authors", return_value={}):
+        GitHistory.get_commits_since("o", "r", DATE, "")
+    command = run.call_args.args[0]
+    assert command[3] == "log"
+    assert "--no-renames" in command
