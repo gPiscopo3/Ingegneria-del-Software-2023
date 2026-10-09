@@ -208,6 +208,18 @@ def test_load_data_unsupported_version(tmp_path):
         load_data(str(path))
 
 
+def test_save_data_failure_keeps_previous_file(tmp_path):
+    files, users = create_sample_data()
+    path = tmp_path / "dati.graphapp"
+    save_data(str(path), owner, repo_name, starting_date, files, users)
+    before = path.read_bytes()
+    with patch("src.logic.DataManagement.pickle.dump", side_effect=RecursionError):
+        with pytest.raises(RecursionError):
+            save_data(str(path), owner, repo_name, starting_date, files, users)
+    assert path.read_bytes() == before
+    assert os.listdir(tmp_path) == ["dati.graphapp"]  # nessun file temporaneo rimasto
+
+
 def test_save_data_nothing_to_save(tmp_path):
     path = tmp_path / "dati.graphapp"
     with pytest.raises(ValueError):
