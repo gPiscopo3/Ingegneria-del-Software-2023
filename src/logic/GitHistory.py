@@ -13,14 +13,13 @@ from requests import HTTPError
 
 from src.i18n import tr
 from src.logic import APICalls
-from src.logic.APICalls import DATE_FORMAT, BASE_URL, Progress, DownloadCancelled
+from src.logic.APICalls import DATE_FORMAT, BASE_URL, Progress, DownloadCancelled, noreply_author
 
 # i commit si leggono da un clone locale parziale (solo commit e alberi, niente contenuti dei file):
 # nessuna quota API, a parte l'associazione email -> account GitHub degli autori
 
 GIT_URL = "https://github.com/"
 SHALLOW_MARGIN = timedelta(days=30)  # storia in più clonata prima della data di inizio
-NOREPLY = re.compile(r"^(\d+)\+([^@]+)@users\.noreply\.github\.com$", re.IGNORECASE)
 CLONE_PROGRESS = re.compile(r"(Counting objects|Compressing objects|Receiving objects|Resolving deltas):\s+(\d+)%")
 CLONE_PHASES = {"Counting objects": "progress.clone_counting", "Compressing objects": "progress.clone_compressing",
                 "Receiving objects": "progress.clone_receiving", "Resolving deltas": "progress.clone_resolving"}
@@ -156,13 +155,6 @@ def read_shallow(repo_dir: str) -> set:
         return set()
     with open(path, encoding="utf-8") as fp:
         return {line.strip() for line in fp if line.strip()}
-
-
-def noreply_author(email: str) -> Optional[Dict]:
-    match = NOREPLY.match(email)
-    if match is None:
-        return None
-    return {"id": int(match.group(1)), "login": match.group(2)}
 
 
 # email -> {"id", "login"} (None se l'email non è associata a un account GitHub)
