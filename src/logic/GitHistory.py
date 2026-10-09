@@ -196,7 +196,11 @@ def map_authors(owner: str, repo_name: str, since: str, header: Dict[str, str], 
     def author_of(key):
         response = APICalls.get_with_ratelimit(BASE_URL + owner + '/' + repo_name + '/commits/' + sample_sha[key],
                                                header)
-        author = response.json().get("author") if response.status_code == 200 else None
+        # commit sconosciuto a GitHub (404, 422): nessun account; quota esaurita ed errori del server non lo sono
+        if response.status_code in (404, 422):
+            return None
+        response.raise_for_status()
+        author = response.json().get("author")
         return {"id": author["id"], "login": author["login"]} if author else None
 
     for key, author in zip(unknown, APICalls.parallel_map(author_of, unknown, progress, tr("progress.authors"))):
