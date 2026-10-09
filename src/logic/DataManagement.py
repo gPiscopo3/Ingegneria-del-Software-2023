@@ -31,14 +31,19 @@ def get_communications_since(owner: str, repo_name: str, starting_date: datetime
     issue_comments = APICalls.get_comments_by_number(owner, repo_name, "issues", starting_date,
                                                      APICalls.build_header(token), progress, until)
 
+    # elenco di issue e pull request attive nel periodo, scaricato una sola volta
+    listing = APICalls.get_issue_listing(owner, repo_name, starting_date, APICalls.build_header(token), until)
+
     # pull requests
-    results = APICalls.get_pulls_since(owner, repo_name, starting_date, token, progress, issue_comments, until)
+    results = APICalls.get_pulls_since(owner, repo_name, starting_date, token, progress, issue_comments, until,
+                                       listing)
     for pull in results:
         if communication_happened(pull):
             update_communications(pull, all_users, starting_date, until)
 
     # issues
-    results = APICalls.get_issues_since(owner, repo_name, starting_date, token, progress, issue_comments, until)
+    results = APICalls.get_issues_since(owner, repo_name, starting_date, token, progress, issue_comments, until,
+                                        listing)
     for issue in results:
         if communication_happened(issue):
             update_communications(issue, all_users, starting_date, until)

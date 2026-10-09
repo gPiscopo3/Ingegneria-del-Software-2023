@@ -123,25 +123,6 @@ def test_get_with_ratelimit_bad_header():
         get_with_ratelimit("https://api.github.com/repos/boh/test/issues", "wrong type")
 
 
-def test_filter_pulls_by_date_bad_url():
-    with pytest.raises(ValueError):
-        filter_pulls_by_date("bad url", {}, DATE)
-
-
-def test_filter_pulls_by_date_none_url():
-    assert filter_pulls_by_date(None, {}, DATE) == []
-
-
-def test_filter_pulls_by_date_bad_header():
-    with pytest.raises(AttributeError):
-        filter_pulls_by_date("https://api.github.com/repos/fullmoonlullaby/test/pulls?per_page=1", "wrong type", DATE)
-
-
-def test_filter_pulls_by_date_wrong_date_format():
-    with pytest.raises(TypeError):
-        filter_pulls_by_date("https://api.github.com/repos/fullmoonlullaby/test/pulls", {}, None)
-
-
 def test_get_rate_limit_token_none():
     with pytest.raises(TypeError):
         get_rate_limit(None)
@@ -181,8 +162,7 @@ def test_get_issues_same_second_replies():
 
 
 def test_get_pulls_same_second_replies():
-    pull = {"number": 7, "created_at": T_STR, "user": user(1),
-            "_links": {"commits": {"href": "https://api.github.com/repos/o/r/pulls/7/commits"}}}
+    pull = {"number": 7, "created_at": T_STR, "user": user(1), "pull_request": {}}
     commit_item = {"commit": {"committer": {"date": T_STR}}, "author": user(3)}
 
     def fake_pages(url, header):
@@ -190,10 +170,29 @@ def test_get_pulls_same_second_replies():
             return [commit_item]
         return []
 
-    with patch.object(APICalls, "filter_pulls_by_date", return_value=[pull]), \
-            patch.object(APICalls, "get_multiple_pages", side_effect=fake_pages):
+    with patch.object(APICalls, "get_issue_listing", return_value=[pull]),             patch.object(APICalls, "get_multiple_pages", side_effect=fake_pages):
         results = get_pulls_since("o", "r", DATE, "", issue_comments={7: [{"created_at": T_STR, "user": user(2)}]})
     assert results == [[(T, user(1)), (T, user(2)), (T, user(3))]]
+
+
+def test_get_pulls_includes_pull_created_before_start_with_activity():
+    # PR aperta prima di DATE ma con un commento dopo: come per le issue, conta
+    old_pull = {"number": 4, "created_at": "2023-10-01T00:00:00Z", "user": user(1), "pull_request": {}}
+    comment = {"created_at": "2023-11-15T00:00:00Z", "user": user(2)}
+    with patch.object(APICalls, "get_issue_listing", return_value=[old_pull]),             patch.object(APICalls, "get_multiple_pages", return_value=[]):
+        results = get_pulls_since("o", "r", DATE, "", issue_comments={4: [comment]})
+    assert [author["id"] for _, author in results[0]] == [1, 2]
+    assert results[0][1][0] == datetime(2023, 11, 15)
+
+
+def test_pulls_and_issues_are_split_from_the_same_listing():
+    listing = [{"number": 1, "created_at": T_STR, "user": user(1)},
+               {"number": 2, "created_at": T_STR, "user": user(2), "pull_request": {}}]
+    with patch.object(APICalls, "get_issue_listing", side_effect=AssertionError("elenco già scaricato")),             patch.object(APICalls, "get_multiple_pages", return_value=[]):
+        issues = get_issues_since(OWNER, REPO, DATE, "", issue_comments={}, listing=listing)
+        pulls = get_pulls_since(OWNER, REPO, DATE, "", issue_comments={}, listing=listing)
+    assert issues == [[(T, user(1))]]
+    assert pulls == [[(T, user(2))]]
 
 
 @pytest.mark.parametrize("status, headers, expected", [
@@ -272,29 +271,6 @@ def test_get_commit_paginates_files():
     assert [f["filename"] for f in commit["files"]] == ["a", "b", "c"]
 
 
-def test_filter_pulls_by_date_stops_paging_before_starting_date():
-    def created(day):
-        return {"created_at": f"2023-12-{day:02d}T00:00:00Z"}
-
-    pages = {"p1": FakeResponse([created(20), created(10)], "p2"), "p2": FakeResponse([created(5)])}
-    requested = []
-
-    def fake_get(url, header):
-        requested.append(url)
-        return pages[url]
-
-    with patch.object(APICalls, "get_with_ratelimit", side_effect=fake_get):
-        results = filter_pulls_by_date("p1", {}, datetime(2023, 12, 12))
-    assert requested == ["p1"]  # l'ultima PR della pagina è già prima di starting_date
-    assert [r["created_at"][8:10] for r in results] == ["20"]
-
-    requested.clear()
-    with patch.object(APICalls, "get_with_ratelimit", side_effect=fake_get):
-        results = filter_pulls_by_date("p1", {}, datetime(2023, 12, 1))
-    assert requested == ["p1", "p2"]
-    assert len(results) == 3
-
-
 def test_get_commits_since_skips_commit_with_http_error():
     def fake_pages(url, header):
         if "/branches" in url:
@@ -351,7 +327,8 @@ def test_get_pulls_ok(token):
     pulls = get_pulls_since(OWNER, REPO, DATE, token)
     assert len(pulls) > 0
     assert_replies_shape(pulls)
-    assert all(replies[0][0] >= DATE for replies in pulls)  # PR create dopo DATE
+    # ogni PR è stata aperta dopo DATE oppure ha almeno una risposta dopo DATE
+    assert all(any(date >= DATE for date, _ in replies) for replies in pulls)
 
 
 @pytest.mark.integration
@@ -437,28 +414,6 @@ def test_get_with_ratelimit_ok():
 def test_get_with_ratelimit_not_found():
     results = get_with_ratelimit("https://api.github.com/repos/not_existent/test/issues", {})
     assert results.status_code == 404
-
-
-@pytest.mark.integration
-def test_filter_pulls_by_date_ok(token):
-    results = filter_pulls_by_date("https://api.github.com/repos/fullmoonlullaby/test/pulls?state=all",
-                                   {"Authorization": "Bearer " + token}, DATE)
-    assert len(results) > 0
-    assert all(datetime.strptime(r["created_at"], DATE_FORMAT) >= DATE for r in results)
-
-
-@pytest.mark.integration
-def test_filter_pulls_by_date_url_not_found(token, http_statuses):
-    assert filter_pulls_by_date("https://api.github.com/repos/not_existent/test/pulls",
-                                {"Authorization": "Bearer " + token}, DATE) == []
-    assert http_statuses == [404]
-
-
-@pytest.mark.integration
-def test_filter_pulls_by_date_date_not_in_range(token, http_statuses):
-    assert filter_pulls_by_date("https://api.github.com/repos/fullmoonlullaby/test/pulls",
-                                {"Authorization": "Bearer " + token}, datetime.now() + timedelta(days=2)) == []
-    assert set(http_statuses) == {200}
 
 
 @pytest.mark.integration

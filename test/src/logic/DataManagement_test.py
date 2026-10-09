@@ -304,6 +304,21 @@ def test_get_communications_since_date_none():
         get_communications_since(owner, repo_name, None, "")
 
 
+def test_get_communications_since_downloads_listing_once():
+    # issue e PR dallo stesso elenco: una sola scansione, e la PR vecchia ma attiva nel periodo conta
+    t = "2023-12-12T10:00:00Z"
+    listing = [{"number": 1, "created_at": t, "user": {"id": 1, "login": "alice"}},
+               {"number": 2, "created_at": "2023-10-01T10:00:00Z", "user": {"id": 3, "login": "carol"},
+                "pull_request": {}}]
+    comments = {1: [{"created_at": t, "user": {"id": 2, "login": "bob"}}],
+                2: [{"created_at": "2023-12-13T10:00:00Z", "user": {"id": 1, "login": "alice"}}]}
+    with patch.object(APICalls, "get_comments_by_number", return_value=comments),             patch.object(APICalls, "get_issue_listing", return_value=listing) as get_listing,             patch.object(APICalls, "get_multiple_pages", return_value=[]):
+        users = get_communications_since(owner, repo_name, starting_date, "")
+    get_listing.assert_called_once()
+    assert communications_of(users[2]) == {dt.datetime(2023, 12, 12, 10): ["alice"]}  # bob risponde alla issue
+    assert communications_of(users[1]) == {dt.datetime(2023, 12, 13, 10): ["carol"]}  # alice alla PR vecchia
+
+
 # *****************************************************************************************************
 # collaborazioni con i commit simulati (nessuna chiamata a GitHub)
 

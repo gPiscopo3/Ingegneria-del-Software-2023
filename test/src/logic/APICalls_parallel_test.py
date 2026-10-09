@@ -86,8 +86,7 @@ def test_get_with_ratelimit_cancelled():
 
 def test_get_pulls_since_two_requests_per_pull():
     pulls = [{"number": n, "created_at": "2023-12-0%dT00:00:00Z" % n, "user": {"id": n, "login": f"u{n}"},
-              "_links": {"commits": {"href": f"https://api.github.com/repos/o/r/pulls/{n}/commits"}}}
-             for n in (1, 2, 3)]
+              "pull_request": {}} for n in (1, 2, 3)]
     comment = {"created_at": "2023-12-05T00:00:00Z", "user": {"id": 9, "login": "commentatore"},
                "issue_url": "https://api.github.com/repos/o/r/issues/2",
                "pull_request_url": "https://api.github.com/repos/o/r/pulls/3"}
@@ -99,7 +98,7 @@ def test_get_pulls_since_two_requests_per_pull():
             return [comment]
         return []
 
-    with patch.object(APICalls, "filter_pulls_by_date", return_value=pulls), \
+    with patch.object(APICalls, "get_issue_listing", return_value=pulls), \
             patch.object(APICalls, "get_multiple_pages", side_effect=fake_pages):
         results = APICalls.get_pulls_since("o", "r", DATE, "")
 
@@ -147,13 +146,6 @@ def test_get_pages_until_none_reads_everything():
     with patch.object(APICalls, "get_multiple_pages", return_value=[item(1), item(20)]) as pages:
         assert len(APICalls.get_pages_until("p1", {}, None)) == 2
     pages.assert_called_once()
-
-
-def test_filter_pulls_by_date_until():
-    pulls = [item(20), item(10), item(5), item(1)]  # ordinate per creazione decrescente
-    with patch.object(APICalls, "get_with_ratelimit", return_value=FakeResponse(pulls)):
-        results = APICalls.filter_pulls_by_date("url", {}, datetime(2023, 12, 3), datetime(2023, 12, 15))
-    assert [r["created_at"][8:10] for r in results] == ["10", "05"]
 
 
 def test_get_with_ratelimit_retries_network_errors():
