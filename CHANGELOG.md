@@ -38,3 +38,12 @@ First public release. Compared with the version presented for the Software Engin
 - Windows executable (no Python installation needed), attached to the release.
 - Requirements: Python 3.10 or later to run from source; dependencies reduced to the ones actually used and
   compatible with recent versions of Python and the libraries.
+
+### Fixed
+- Commits on the same file and replies in the same issue or PR made in the same second by different people are no
+  longer lost (they used to overwrite each other).
+- `.graphapp` data format version 2; files saved with version 1 are still read and converted on loading.
+
+### Tests
+- Tests that call GitHub are marked `integration` and skipped when `GH_TOKEN` is not set; the others always run.
+- Stronger assertions and new edge cases (rate limits, retries, pagination, data loading, communications).

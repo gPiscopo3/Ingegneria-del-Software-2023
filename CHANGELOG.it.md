@@ -37,3 +37,15 @@ Prima release pubblica. Rispetto alla versione presentata per il corso di Ingegn
 - Eseguibile per Windows (nessuna installazione di Python), allegato alla release.
 - Requisiti: Python 3.10 o superiore per l'esecuzione da sorgente; dipendenze ridotte a quelle effettivamente
   usate e compatibili con le versioni recenti di Python e delle librerie.
+
+### Correzioni
+- Le modifiche allo stesso file e le risposte nella stessa issue o PR fatte nello stesso secondo da persone diverse
+  non vanno più perse (prima si sovrascrivevano).
+- Formato dei dati `.graphapp` versione 2; i file salvati con la versione 1 vengono ancora letti e convertiti al
+  caricamento.
+
+### Test
+- I test che chiamano GitHub sono marcati `integration` e vengono saltati se `GH_TOKEN` non è impostato; gli altri
+  girano sempre.
+- Asserzioni più stringenti e nuovi casi limite (rate limit, nuovi tentativi, paginazione, caricamento dei dati,
+  comunicazioni).
