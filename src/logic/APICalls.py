@@ -336,8 +336,7 @@ def get_multiple_pages(url: str, header: Dict[str, str]):
             url = next_page_url(response)
         return results  # list
     except HTTPError as e:
-        print(e.response.text)
-        return []  # in caso di errore ritorna una lista vuota
+        return empty_if_not_found(e)
 
 
 # come get_multiple_pages per elenchi ordinati per data di creazione crescente: smette di paginare appena
@@ -356,8 +355,16 @@ def get_pages_until(url: str, header: Dict[str, str], until: Optional[datetime])
             url = next_page_url(response) if len(in_range) == len(page) else None
         return results
     except HTTPError as e:
-        print(e.response.text)
-        return []  # in caso di errore ritorna una lista vuota
+        return empty_if_not_found(e)
+
+
+# repository o token inesistenti (404, 401) danno una lista vuota; quota esaurita (403, 429) ed errori del server
+# (5xx) vengono propagati, altrimenti un download fallito sembrerebbe un periodo senza attività
+def empty_if_not_found(error: HTTPError):
+    if error.response is None or error.response.status_code not in (401, 404):
+        raise error
+    print(error.response.text)
+    return []
 
 
 # dettaglio di un commit; oltre 300 file modificati GitHub pagina la lista "files"
