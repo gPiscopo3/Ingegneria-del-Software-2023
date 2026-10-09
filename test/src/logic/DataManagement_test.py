@@ -1,5 +1,6 @@
 import os
 import pickle
+import sys
 import datetime as dt
 from unittest.mock import patch
 
@@ -150,6 +151,59 @@ def test_load_data_version_1_edits_converted(tmp_path):
 def test_load_data_invalid_fields(tmp_path, changes):
     path = tmp_path / "dati.graphapp"
     write_pickle(path, valid_data(**changes))
+    with pytest.raises(ValueError):
+        load_data(str(path))
+
+
+def test_save_load_data_long_chain(tmp_path):
+    # repository grandi: utenti collegati in catena più lunga del limite di ricorsione di pickle
+    size = 2 * sys.getrecursionlimit()
+    chain = [User(i, f"user{i}") for i in range(size)]
+    for current, following in zip(chain, chain[1:]):
+        current.update_communication(dt.datetime(2023, 12, 1), {following})
+    file = File("a.py")
+    file.add_edit(dt.datetime(2023, 12, 2), chain[0])
+    file.add_edit(dt.datetime(2023, 12, 3), chain[-1])
+    path = str(tmp_path / "dati.graphapp")
+    save_data(path, owner, repo_name, starting_date, {"a.py": file}, {user.identifier: user for user in chain})
+    data = load_data(path)
+    users = data["users"]
+    assert len(users) == size
+    for i in range(size - 1):
+        assert users[i].username == f"user{i}"
+        assert users[i].communications == {dt.datetime(2023, 12, 1): {users[i + 1]}}
+    assert users[size - 1].communications == {}
+    edits = data["files"]["a.py"].modified_by
+    assert edits == [(dt.datetime(2023, 12, 2), users[0]), (dt.datetime(2023, 12, 3), users[size - 1])]
+
+
+def test_save_load_data_distinct_users_stay_distinct(tmp_path):
+    # come nei download reali: stesso identificativo, ma l'autore del file e quello delle comunicazioni sono oggetti diversi
+    sender, receiver = User(1, "alice"), User(2, "bob")
+    sender.update_communication(dt.datetime(2023, 12, 1), {receiver})
+    file_author = User(1, "alice")
+    file = File("a.py")
+    file.add_edit(dt.datetime(2023, 12, 2), file_author)
+    path = str(tmp_path / "dati.graphapp")
+    save_data(path, owner, repo_name, starting_date, {"a.py": file}, {1: sender, 2: receiver})
+    data = load_data(path)
+    loaded_author = data["files"]["a.py"].modified_by[0][1]
+    assert loaded_author is not data["users"][1]
+    assert loaded_author.communications == {}
+    assert data["users"][1].communications == {dt.datetime(2023, 12, 1): {data["users"][2]}}
+
+
+def test_load_data_v3_bad_index(tmp_path):
+    path = tmp_path / "dati.graphapp"
+    write_pickle(path, valid_data(version=3, files=None, users={1: 5},
+                                  user_table=[(1, "alice", [(dt.datetime(2023, 12, 1), [])])]))
+    with pytest.raises(ValueError):
+        load_data(str(path))
+
+
+def test_load_data_unsupported_version(tmp_path):
+    path = tmp_path / "dati.graphapp"
+    write_pickle(path, valid_data(version=99))
     with pytest.raises(ValueError):
         load_data(str(path))
 
