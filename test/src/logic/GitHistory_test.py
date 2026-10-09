@@ -1,8 +1,10 @@
+import json
 import os
 from datetime import datetime
 from unittest.mock import patch
 
 import pytest
+import requests
 
 from src.logic import APICalls, GitHistory
 from src.logic.GitHistory import parse_log, noreply_author, map_authors, RECORD, FIELD
@@ -143,3 +145,41 @@ def test_git_log_without_rename_detection():
     command = run.call_args.args[0]
     assert command[3] == "log"
     assert "--no-renames" in command
+
+
+def api_response(status, body=None):
+    res = requests.Response()
+    res.status_code = status
+    res._content = json.dumps(body if body is not None else {}).encode()
+    return res
+
+
+# bob@example.com non compare nell'elenco dei commit (404): resta lo step 2, un commit per email
+def map_bob(commit_response):
+    def fake_get(url, _header):
+        if "/commits/bbb" in url:
+            return commit_response
+        return api_response(404)
+
+    with patch.object(APICalls, "get_with_ratelimit", side_effect=fake_get):
+        return map_authors("o", "r", "2023-11-01T00:00:00Z", {}, parse_log(LOG)[1:])
+
+
+def test_map_authors_resolves_author_from_single_commit():
+    authors = map_bob(api_response(200, {"author": {"id": 7, "login": "bob"}}))
+    assert authors == {"bob@example.com": {"id": 7, "login": "bob"}}
+
+
+def test_map_authors_commit_without_account_is_none():
+    assert map_bob(api_response(200, {"author": None})) == {"bob@example.com": None}
+
+
+@pytest.mark.parametrize("status", [404, 422])
+def test_map_authors_unknown_commit_is_none(status):
+    assert map_bob(api_response(status)) == {"bob@example.com": None}
+
+
+@pytest.mark.parametrize("status", [403, 429, 500, 502])
+def test_map_authors_raises_on_quota_and_server_errors(status):
+    with pytest.raises(requests.HTTPError):
+        map_bob(api_response(status))
