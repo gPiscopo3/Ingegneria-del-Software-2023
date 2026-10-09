@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from datetime import datetime
 from src.i18n import tr
 from src.logic import APICalls, GitHistory
+import os
 import pickle
 
 
@@ -182,8 +183,15 @@ def save_data(path: str, owner: str, repo_name: str, starting_date: datetime,
         "files_range": files_range if files is not None else None,
         "users_range": users_range if users is not None else None,
     }
-    with open(path, 'wb') as fp:
-        pickle.dump(data, fp, protocol=pickle.HIGHEST_PROTOCOL)
+    # scrittura su file temporaneo: se fallisce a metà, il file già presente non viene troncato
+    temp_path = path + ".tmp"
+    try:
+        with open(temp_path, 'wb') as fp:
+            pickle.dump(data, fp, protocol=pickle.HIGHEST_PROTOCOL)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 def load_data(path: str):
