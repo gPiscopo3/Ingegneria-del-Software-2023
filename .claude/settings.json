@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python -m pytest *)",
+      "Bash(python -m pytest *)",
+      "Bash(pytest *)",
+      "Bash(.venv/Scripts/python -m pylint *)",
+      "Bash(python -m pylint *)",
+      "Bash(pylint *)",
+      "PowerShell(.venv/Scripts/python -m pytest *)",
+      "PowerShell(python -m pytest *)",
+      "PowerShell(pytest *)",
+      "PowerShell(.venv/Scripts/python -m pylint *)",
+      "PowerShell(python -m pylint *)",
+      "PowerShell(pylint *)"
+    ],
+    "ask": [
+      "Edit(/test/**)",
+      "Bash(git push *)",
+      "PowerShell(git push *)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)"
+    ]
+  }
+}
