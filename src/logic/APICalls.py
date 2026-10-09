@@ -122,13 +122,22 @@ def get_comments_by_number(owner: str, repo_name: str, kind: str, starting_date:
     return grouped
 
 
-def get_issues_since(owner: str, repo_name: str, starting_date: datetime, token: str, progress: Progress = None,
-                     issue_comments: Optional[Dict[int, list]] = None, until: Optional[datetime] = None):
-    header = build_header(token)
+# issue e pull request aggiornate dopo starting_date (con attività nel periodo, anche se create prima) e create
+# entro until; le pull request hanno la chiave "pull_request"
+def get_issue_listing(owner: str, repo_name: str, starting_date: datetime, header: Dict[str, str],
+                      until: Optional[datetime] = None) -> list:
     query_string = "?state=all&per_page=100&sort=created&direction=asc&since=" + starting_date.strftime(DATE_FORMAT)
-    results = get_pages_until(BASE_URL + owner + '/' + repo_name + '/issues' + query_string, header, until)
+    return get_pages_until(BASE_URL + owner + '/' + repo_name + '/issues' + query_string, header, until)
+
+
+def get_issues_since(owner: str, repo_name: str, starting_date: datetime, token: str, progress: Progress = None,
+                     issue_comments: Optional[Dict[int, list]] = None, until: Optional[datetime] = None,
+                     listing: Optional[list] = None):
+    header = build_header(token)
+    if listing is None:
+        listing = get_issue_listing(owner, repo_name, starting_date, header, until)
     # l'endpoint delle issue restituisce anche le pull request, già gestite da get_pulls_since
-    results = [issue for issue in results if "pull_request" not in issue]
+    results = [issue for issue in listing if "pull_request" not in issue]
     if issue_comments is None:
         issue_comments = get_comments_by_number(owner, repo_name, "issues", starting_date, header, progress, until)
 
@@ -141,11 +150,16 @@ def get_issues_since(owner: str, repo_name: str, starting_date: datetime, token:
 
 
 def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: str, progress: Progress = None,
-                    issue_comments: Optional[Dict[int, list]] = None, until: Optional[datetime] = None):
+                    issue_comments: Optional[Dict[int, list]] = None, until: Optional[datetime] = None,
+                    listing: Optional[list] = None):
     header = build_header(token)
-    query_string = "?state=all&sort=created&direction=desc&per_page=100"
-    results = filter_pulls_by_date(BASE_URL + owner + '/' + repo_name + '/pulls' + query_string, header, starting_date,
-                                   until)
+    if not isinstance(starting_date, datetime):
+        raise TypeError("'starting_date' parameter must be datetime")
+    # le PR dall'elenco delle issue: come per le issue contano anche quelle create prima ma attive nel periodo
+    # (l'elenco /pulls non si può filtrare per data di aggiornamento)
+    if listing is None:
+        listing = get_issue_listing(owner, repo_name, starting_date, header, until)
+    results = [item for item in listing if "pull_request" in item]
     if not results:
         return []
     # commenti e commenti di review presi in blocco per tutto il repository invece che PR per PR
@@ -155,9 +169,9 @@ def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: 
 
     def pull_replies(pull):
         # per le review e i commit non esiste un endpoint a livello di repository: 2 richieste per PR
-        # il link alle review è aggiunto a mano perché non c'è nel json di risposta
-        urls = [BASE_URL + owner + '/' + repo_name + '/pulls/' + str(pull["number"]) + '/reviews?per_page=100',
-                pull["_links"]["commits"]["href"] + '?per_page=100&since=' + starting_date.strftime(DATE_FORMAT)]
+        # (tutti i commit della PR: quelli prima di starting_date contano come interventi precedenti)
+        pull_url = BASE_URL + owner + '/' + repo_name + '/pulls/' + str(pull["number"])
+        urls = [pull_url + '/reviews?per_page=100', pull_url + '/commits?per_page=100']
 
         # "merge" delle risposte, ordinandole per data
         replies = [(datetime.strptime(pull["created_at"], DATE_FORMAT), pull["user"])]
@@ -220,33 +234,6 @@ def get_rate_limit(token: str) -> Optional[Dict[str, int]]:
 
 
 # funzioni "private" delle funzioni di sopra
-
-# ritorna la lista delle pulls filtrando per data
-def filter_pulls_by_date(url: str, header: Dict[str, str], starting_date: datetime, until: Optional[datetime] = None):
-    results = []
-    if not isinstance(starting_date, datetime):
-        raise TypeError("'starting_date' parameter must be datetime")
-    try:
-        while url:
-            response = get_with_ratelimit(url, header)
-            response.raise_for_status()
-            page = response.json()
-            results.extend(page)
-            url = None
-            if 'Link' in response.headers and len(page) > 0:
-                last_date = datetime.strptime(page[-1]["created_at"], DATE_FORMAT)
-                links = parse_header_links(response.headers['Link'])
-                for link in links:
-                    if link['rel'] == 'next' and last_date > starting_date:
-                        url = link['url']
-        # le PR create dopo until vengono scartate senza scaricarne review e commit
-        return [result for result in results
-                if starting_date <= datetime.strptime(result['created_at'], DATE_FORMAT)
-                and (until is None or datetime.strptime(result['created_at'], DATE_FORMAT) <= until)]  # list
-    except HTTPError as e:
-        print(e.response.text)
-        return []  # in caso di errore ritorna una lista vuota
-
 
 # per ogni get request controlla se ci sono altre pagine e unisce tutti i risultati
 def get_multiple_pages(url: str, header: Dict[str, str]):
