@@ -165,3 +165,31 @@ def test_get_with_ratelimit_retries_network_errors():
                                                                                  return_value=False):
         assert get_with_ratelimit("https://api.github.com/x", {}) is ok
     assert len(attempts) == 2
+
+
+def test_parallel_map_reports_progress_after_every_completed_item():
+    calls = []
+    gate = threading.Event()
+
+    # il primo elemento resta bloccato finché non ha già finito il secondo: se il progresso arrivasse solo alla
+    # fine, il secondo elemento non sarebbe mai notificato prima del primo
+    def func(x):
+        if x == 0:
+            assert gate.wait(5)
+        return x
+
+    def progress(label, done, total):
+        calls.append((done, total))
+        if done >= 1:
+            gate.set()
+
+    parallel_map(func, [0, 1], progress, "Test")
+    assert calls[0] == (1, 2)
+    assert calls[-1] == (2, 2)
+
+
+def test_parallel_map_progress_counts_each_item_once():
+    calls = []
+    parallel_map(lambda x: x, range(30), lambda label, done, total: calls.append(done), "Test")
+    assert calls[-1] == 30
+    assert calls == sorted(set(calls))  # sempre crescente, mai ripetuto
