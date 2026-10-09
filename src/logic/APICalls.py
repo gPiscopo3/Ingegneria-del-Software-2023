@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, FIRST_EXCEPTION, wait
 from requests import HTTPError
-from typing import Callable, Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from requests.exceptions import MissingSchema
 from requests.utils import parse_header_links
@@ -134,11 +134,10 @@ def get_issues_since(owner: str, repo_name: str, starting_date: datetime, token:
 
     issues = []
     for issue in results:
-        comments = dict()
-        comments[datetime.strptime(issue["created_at"], DATE_FORMAT)] = issue["user"]
-        comments = comments | reformat_response(issue_comments.get(issue["number"], []))
-        issues.append(dict(sorted(comments.items())))
-    return issues  # lista di dictionary
+        comments = [(datetime.strptime(issue["created_at"], DATE_FORMAT), issue["user"])]
+        comments += reformat_response(issue_comments.get(issue["number"], []))
+        issues.append(sort_replies(comments))
+    return issues  # lista di liste [(data, autore)]
 
 
 def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: str, progress: Progress = None,
@@ -161,15 +160,14 @@ def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: 
                 pull["_links"]["commits"]["href"] + '?per_page=100&since=' + starting_date.strftime(DATE_FORMAT)]
 
         # "merge" delle risposte, ordinandole per data
-        replies = dict()
-        replies[datetime.strptime(pull["created_at"], DATE_FORMAT)] = pull["user"]
-        replies = replies | reformat_response(issue_comments.get(pull["number"], []))
-        replies = replies | reformat_response(review_comments.get(pull["number"], []))
+        replies = [(datetime.strptime(pull["created_at"], DATE_FORMAT), pull["user"])]
+        replies += reformat_response(issue_comments.get(pull["number"], []))
+        replies += reformat_response(review_comments.get(pull["number"], []))
         for url in urls:
-            replies = replies | reformat_response(get_multiple_pages(url, header))
-        return dict(sorted(replies.items()))
+            replies += reformat_response(get_multiple_pages(url, header))
+        return sort_replies(replies)
 
-    return parallel_map(pull_replies, results, progress, tr("progress.pull_requests"))  # lista di dictionary
+    return parallel_map(pull_replies, results, progress, tr("progress.pull_requests"))  # lista di liste [(data, autore)]
 
 
 def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token: str, progress: Progress = None,
@@ -365,20 +363,27 @@ def update_last_rate_limit(response: requests.Response):
                 last_rate_limit[key] = int(value)
 
 
-# riformatta ogni commento/commit/review in un dictionary con coppie <data: autore>
-def reformat_response(response: list):
+# riformatta ogni commento/commit/review in una lista di coppie (data, autore); una lista e non un dict per data:
+# due risposte nello stesso secondo restano entrambe
+def reformat_response(response: list) -> List[Tuple[datetime, dict]]:
     if not isinstance(response, list):
         raise TypeError("'response' parameter must be list ")
 
-    buffer = dict()
+    buffer = []
     for item in response:
         if "created_at" in item:
             if item['user'] is not None:
-                buffer[datetime.strptime(item["created_at"], DATE_FORMAT)] = item['user']
+                buffer.append((datetime.strptime(item["created_at"], DATE_FORMAT), item['user']))
         elif "submitted_at" in item:
             if item['user'] is not None and item['submitted_at'] is not None:
-                buffer[datetime.strptime(item["submitted_at"], DATE_FORMAT)] = item['user']
+                buffer.append((datetime.strptime(item["submitted_at"], DATE_FORMAT), item['user']))
         elif "commit" in item:
             if item['author'] is not None:
-                buffer[datetime.strptime(item["commit"]["committer"]["date"], DATE_FORMAT)] = item['author']
+                buffer.append((datetime.strptime(item["commit"]["committer"]["date"], DATE_FORMAT), item['author']))
     return buffer
+
+
+# ordina le risposte per data; l'ordinamento è stabile, quindi a parità di data l'apertura della issue/PR
+# (sempre il primo elemento) resta prima
+def sort_replies(replies: List[Tuple[datetime, dict]]) -> List[Tuple[datetime, dict]]:
+    return sorted(replies, key=lambda reply: reply[0])

@@ -1,6 +1,6 @@
 from src.model.File import File
 from src.model.User import User
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from datetime import datetime
 from src.i18n import tr
 from src.logic import APICalls, GitHistory
@@ -77,7 +77,8 @@ def get_collaborations_since(owner: str, repo_name: str, starting_date: datetime
 # salvataggio e caricamento espliciti dei dati di un repository (file scelto dall'utente)
 
 DATA_FORMAT = "graphapp-data"
-DATA_VERSION = 1
+DATA_VERSION = 2
+READABLE_VERSIONS = (1, 2)  # versione 1: File.modified_by come dict, convertito al caricamento
 DATA_EXTENSION = ".graphapp"
 
 # uniche classi che un file di dati può contenere: caricare un pickle arbitrario eseguirebbe codice
@@ -135,7 +136,7 @@ def load_data(path: str):
 
     if not isinstance(data, dict) or data.get("format") != DATA_FORMAT:
         raise ValueError(tr("file_error.not_graphapp"))
-    if data.get("version") != DATA_VERSION:
+    if data.get("version") not in READABLE_VERSIONS:
         raise ValueError(tr("file_error.version", version=data.get("version")))
     for key in ("owner", "repo"):
         if not isinstance(data.get(key), str) or data[key] == "":
@@ -166,7 +167,7 @@ def activity_period(files: Optional[Dict[str, File]], users: Optional[Dict[int, 
         -> Optional[Tuple[datetime, datetime]]:
     dates = []
     for file in (files or {}).values():
-        dates.extend(file.modified_by.keys())
+        dates.extend(date for date, _ in file.modified_by)
     for user in (users or {}).values():
         dates.extend(user.communications.keys())
     if not dates:
@@ -177,20 +178,20 @@ def activity_period(files: Optional[Dict[str, File]], users: Optional[Dict[int, 
 # funzioni "private" delle funzioni di sopra
 
 # controlla se c'è almeno una risposta di uno user diverso dall'autore della pull request/issue
-def communication_happened(response: dict):
+def communication_happened(response: List[Tuple[datetime, dict]]):
     if len(response) > 0:
-        id_creator = next(iter(response.values()))['id']
-        for date, author in response.items():
+        id_creator = response[0][1]['id']
+        for date, author in response:
             if author["id"] != id_creator:
                 return True
     return False
 
 
 # itera le risposte ordinate per data salvando le comunicazioni generate da ogni risposta
-def update_communications(response: dict, all_users: Dict[int, User], starting_date: datetime,
+def update_communications(response: List[Tuple[datetime, dict]], all_users: Dict[int, User], starting_date: datetime,
                           until: Optional[datetime] = None):
     previous_users_ids: Set[int] = set()  # buffer in cui sono salvati gli autori delle risposte precedenti
-    for created_date, sender in response.items():
+    for created_date, sender in response:
 
         if sender["id"] not in all_users:  # crea l'utente se non è già presente in all_users
             all_users[sender["id"]] = User(sender["id"], sender["login"])

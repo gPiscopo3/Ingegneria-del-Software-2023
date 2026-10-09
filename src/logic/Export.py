@@ -58,7 +58,7 @@ def communication_weights(users: Dict[int, User], start: datetime, end: datetime
 def github_ids(files: Optional[Dict[str, File]], users: Optional[Dict[int, User]]) -> Dict[str, int]:
     ids = {}
     for file in (files or {}).values():
-        for author in file.modified_by.values():
+        for _, author in file.modified_by:
             ids[author.username] = author.identifier
     for user in (users or {}).values():
         ids[user.username] = user.identifier
@@ -195,7 +195,7 @@ def write_mat(g, path: str, info: Dict[str, str]):
 def write_edits_csv(files: Dict[str, File], start: datetime, end: datetime, path: str) -> int:
     # rete bipartita sviluppatore-file con data: una riga per ogni modifica di un file nell'intervallo
     rows = sorted((date, author.username, author.identifier, file.identifier)
-                  for file in files.values() for date, author in file.modified_by.items() if start <= date <= end)
+                  for file in files.values() for date, author in file.modified_by if start <= date <= end)
     with open(path, "w", newline="", encoding="utf-8") as fp:
         writer = csv.writer(fp)
         writer.writerow(["developer", "developer_id", "file", "timestamp"])

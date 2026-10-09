@@ -107,9 +107,9 @@ def test_get_pulls_since_two_requests_per_pull():
     assert len(per_pull) == 2 * len(pulls)  # solo reviews e commits per ogni PR
     assert len(requested) - len(per_pull) == 2  # commenti e commenti di review in blocco
     commenter = {"id": 9, "login": "commentatore"}
-    assert commenter in results[1].values()  # commento della PR 2 (via issue_url)
-    assert commenter in results[2].values()  # commento di review della PR 3
-    assert commenter not in results[0].values()
+    assert commenter in [author for _, author in results[1]]  # commento della PR 2 (via issue_url)
+    assert commenter in [author for _, author in results[2]]  # commento di review della PR 3
+    assert commenter not in [author for _, author in results[0]]
 
 
 class FakeResponse:
