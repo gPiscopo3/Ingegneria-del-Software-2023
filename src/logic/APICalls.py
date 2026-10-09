@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, FIRST_COMPLETED, wait
 from requests import HTTPError
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from requests.exceptions import MissingSchema
 from requests.utils import parse_header_links
@@ -18,6 +18,7 @@ BASE_URL = API_URL + '/repos/'
 API_VERSION = '2026-03-10'
 GRAPHQL_URL = API_URL + '/graphql'
 GRAPHQL_BATCH = 50  # pull request per query GraphQL
+EARLIER_BATCH = 20  # issue/PR per query GraphQL dei commenti precedenti (ognuna porta fino a ~2600 nodi)
 DEFAULT_HEADERS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": API_VERSION}
 MAX_RETRIES = 3
 MAX_WORKERS = 8  # richieste contemporanee
@@ -107,18 +108,10 @@ def build_header(token: str):
     return {"Authorization": "Bearer " + token.strip()}
 
 
-# numeri delle issue/PR create prima di starting_date: i loro commenti precedenti all'intervallo servono a sapere
-# a chi risponde un commento dentro l'intervallo, ma il blocco con "since" non li include
-def created_before(items: list, starting_date: datetime) -> List[int]:
-    return [item["number"] for item in items if datetime.strptime(item["created_at"], DATE_FORMAT) < starting_date]
-
-
 # tutti i commenti del repository di un tipo ("issues" = commenti di issue e PR, "pulls" = commenti di review)
-# nell'intervallo [starting_date, until], 100 per richiesta, raggruppati per numero di issue/PR;
-# per i numeri in earlier (create prima di starting_date) i commenti sono tutti quelli fino a until
+# nell'intervallo [starting_date, until], 100 per richiesta, raggruppati per numero di issue/PR
 def get_comments_by_number(owner: str, repo_name: str, kind: str, starting_date: datetime, header: Dict[str, str],
-                           progress: Progress = None, until: Optional[datetime] = None,
-                           earlier: Iterable[int] = ()) -> Dict[int, list]:
+                           progress: Progress = None, until: Optional[datetime] = None) -> Dict[int, list]:
     url_key = "issue_url" if kind == "issues" else "pull_request_url"
     label = tr("progress.comments") if kind == "issues" else tr("progress.review_comments")
     url = (BASE_URL + owner + '/' + repo_name + '/' + kind + '/comments?per_page=100&sort=created&direction=asc'
@@ -129,16 +122,6 @@ def get_comments_by_number(owner: str, repo_name: str, kind: str, starting_date:
         number = int(comment[url_key].rsplit('/', 1)[1])
         grouped.setdefault(number, []).append(comment)
         count += 1
-
-    def all_comments(number):
-        comments = get_multiple_pages(BASE_URL + owner + '/' + repo_name + '/' + kind + '/' + str(number) +
-                                      '/comments?per_page=100', header)
-        return [c for c in comments if until is None or datetime.strptime(c["created_at"], DATE_FORMAT) <= until]
-
-    earlier = list(earlier)
-    for number, comments in zip(earlier, parallel_map(all_comments, earlier, progress, label)):
-        count += len(comments) - len(grouped.get(number, []))
-        grouped[number] = comments
     if progress is not None:
         progress(f"{label}: {count}", 0, 0)
     return grouped
@@ -161,15 +144,16 @@ def get_issues_since(owner: str, repo_name: str, starting_date: datetime, token:
     # l'endpoint delle issue restituisce anche le pull request, già gestite da get_pulls_since
     results = [issue for issue in listing if "pull_request" not in issue]
     if issue_comments is None:
-        issue_comments = get_comments_by_number(owner, repo_name, "issues", starting_date, header, progress, until,
-                                                created_before(results, starting_date))
+        issue_comments = get_comments_by_number(owner, repo_name, "issues", starting_date, header, progress, until)
 
     issues = []
     for issue in results:
         comments = [(datetime.strptime(issue["created_at"], DATE_FORMAT), issue["user"])]
         comments += reformat_response(issue_comments.get(issue["number"], []))
-        issues.append(sort_replies(comments))
-    return issues  # lista di liste [(data, autore)]
+        issues.append(comments)
+    with_earlier_replies(owner, repo_name, [issue["number"] for issue in results], issues, set(), starting_date, until,
+                         header, progress)
+    return [sort_replies(comments) for comments in issues]  # lista di liste [(data, autore)]
 
 
 def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: str, progress: Progress = None,
@@ -187,10 +171,8 @@ def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: 
         return []
     # commenti e commenti di review presi in blocco per tutto il repository invece che PR per PR
     if issue_comments is None:
-        issue_comments = get_comments_by_number(owner, repo_name, "issues", starting_date, header, progress, until,
-                                                created_before(results, starting_date))
-    review_comments = get_comments_by_number(owner, repo_name, "pulls", starting_date, header, progress, until,
-                                             created_before(results, starting_date))
+        issue_comments = get_comments_by_number(owner, repo_name, "issues", starting_date, header, progress, until)
+    review_comments = get_comments_by_number(owner, repo_name, "pulls", starting_date, header, progress, until)
 
     # review e commit: senza endpoint a livello di repository; con un token si chiedono con GraphQL, 50 PR per query
     activity = pull_activity(owner, repo_name, [pull["number"] for pull in results], header, progress)
@@ -202,8 +184,10 @@ def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: 
         replies += reformat_response(issue_comments.get(pull["number"], []))
         replies += reformat_response(review_comments.get(pull["number"], []))
         replies += activity[pull["number"]]
-        pulls.append(sort_replies(replies))
-    return pulls  # lista di liste [(data, autore)]
+        pulls.append(replies)
+    numbers = [pull["number"] for pull in results]
+    with_earlier_replies(owner, repo_name, numbers, pulls, set(numbers), starting_date, until, header, progress)
+    return [sort_replies(replies) for replies in pulls]  # lista di liste [(data, autore)]
 
 
 # review e commit di ogni PR: {numero: [(data, autore)]}
@@ -286,6 +270,126 @@ def graphql_replies(pull: Optional[dict]) -> Optional[List[Tuple[datetime, dict]
         if author is not None:
             replies.append((datetime.strptime(commit["committedDate"], DATE_FORMAT), author))
     return replies
+
+
+# aggiunge a replies_lists (una lista di risposte per ogni numero) i commenti precedenti a starting_date delle issue/PR
+# create prima dell'intervallo che hanno almeno una risposta al suo interno: sono le uniche a cui possono rispondere
+# i commenti dell'intervallo, e il blocco dei commenti scaricato con "since" non li comprende
+def with_earlier_replies(owner: str, repo_name: str, numbers: List[int], replies_lists: List[list], pulls: Set[int],
+                         starting_date: datetime, until: Optional[datetime], header: Dict[str, str],
+                         progress: Progress = None):
+    old = [number for number, replies in zip(numbers, replies_lists)
+           if replies[0][0] < starting_date and has_reply_in_range(replies, starting_date, until)]
+    earlier = earlier_replies(owner, repo_name, old, pulls, starting_date, header, progress)
+    for number, replies in zip(numbers, replies_lists):
+        replies.extend(earlier.get(number, []))
+
+
+def has_reply_in_range(replies: List[Tuple[datetime, dict]], starting_date: datetime, until: Optional[datetime] = None):
+    return any(date >= starting_date and (until is None or date <= until) for date, _ in replies)
+
+
+# risposte (data, autore) precedenti a starting_date di issue e PR: commenti e, per le PR, commenti di review;
+# review e commit delle PR arrivano già per intero da pull_activity. Con un token si usa GraphQL, EARLIER_BATCH
+# elementi per query; senza token 1 o 2 richieste REST per elemento
+def earlier_replies(owner: str, repo_name: str, numbers: List[int], pulls: Set[int], starting_date: datetime,
+                    header: Dict[str, str], progress: Progress = None) -> Dict[int, List[Tuple[datetime, dict]]]:
+    if not numbers:
+        return {}
+    label = tr("progress.comments")
+    if not header:
+        replies = parallel_map(lambda number: rest_earlier_replies(owner, repo_name, number, number in pulls,
+                                                                   starting_date, header), numbers, progress, label)
+        return dict(zip(numbers, replies))
+
+    batches = [numbers[i:i + EARLIER_BATCH] for i in range(0, len(numbers), EARLIER_BATCH)]
+
+    def scaled(batch_label, done, _total):  # avanzamento in elementi e non in gruppi
+        if progress is not None:
+            progress(batch_label, min(done * EARLIER_BATCH, len(numbers)), len(numbers))
+
+    earlier: Dict[int, List[Tuple[datetime, dict]]] = {}
+    for batch_result in parallel_map(lambda batch: graphql_earlier_replies(owner, repo_name, batch, pulls,
+                                                                           starting_date, header),
+                                     batches, scaled, label):
+        earlier.update(batch_result)
+    return earlier
+
+
+def rest_earlier_replies(owner: str, repo_name: str, number: int, is_pull: bool, starting_date: datetime,
+                         header: Dict[str, str]) -> List[Tuple[datetime, dict]]:
+    base = BASE_URL + owner + '/' + repo_name
+    urls = [f"{base}/issues/{number}/comments?per_page=100"]
+    if is_pull:
+        urls.append(f"{base}/pulls/{number}/comments?per_page=100")
+    replies = []
+    for url in urls:
+        replies += reformat_response(get_multiple_pages(url, header))
+    return [reply for reply in replies if reply[0] < starting_date]
+
+
+COMMENT_FIELDS = ("pageInfo { hasNextPage } nodes { createdAt "
+                  "author { __typename login ... on User { databaseId } ... on Bot { databaseId } } }")
+EARLIER_FIELDS = ("__typename ... on Issue { comments(first: 100) { " + COMMENT_FIELDS + " } } "
+                  "... on PullRequest { comments(first: 100) { " + COMMENT_FIELDS + " } "
+                  "reviewThreads(first: 50) { pageInfo { hasNextPage } nodes { comments(first: 50) { " +
+                  COMMENT_FIELDS + " } } } }")
+
+
+# come earlier_replies per un gruppo di numeri con una sola query GraphQL; gli elementi che GraphQL non restituisce
+# per intero (troppi commenti o thread di review) o l'intero gruppo se la richiesta fallisce passano da REST
+def graphql_earlier_replies(owner: str, repo_name: str, numbers: List[int], pulls: Set[int], starting_date: datetime,
+                            header: Dict[str, str]) -> Dict[int, List[Tuple[datetime, dict]]]:
+    query = ("query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { " +
+             " ".join(f"n{n}: issueOrPullRequest(number: {n}) {{ {EARLIER_FIELDS} }}" for n in numbers) + " } }")
+    try:
+        body = post_graphql(query, {"owner": owner, "name": repo_name}, header)
+        repository = (body.get("data") or {}).get("repository") or {}
+    except HTTPError:
+        repository = {}
+
+    earlier = {}
+    for number in numbers:
+        replies = graphql_earlier(repository.get(f"n{number}"), starting_date)
+        if replies is None:
+            replies = rest_earlier_replies(owner, repo_name, number, number in pulls, starting_date, header)
+        earlier[number] = replies
+    return earlier
+
+
+# risposte precedenti a starting_date nella risposta GraphQL di un'issue/PR; None se non è completa. I commenti
+# arrivano in ordine di creazione: se l'ultimo ricevuto è già successivo all'inizio, quelli precedenti ci sono tutti
+def graphql_earlier(item: Optional[dict], starting_date: datetime) -> Optional[List[Tuple[datetime, dict]]]:
+    if item is None:
+        return None
+    comments = item["comments"]
+    nodes = comments["nodes"]
+    if comments["pageInfo"]["hasNextPage"] and (not nodes or
+                                                datetime.strptime(nodes[-1]["createdAt"], DATE_FORMAT) < starting_date):
+        return None
+    groups = [nodes]
+    threads = item.get("reviewThreads")
+    if threads is not None:
+        if threads["pageInfo"]["hasNextPage"]:
+            return None
+        for thread in threads["nodes"]:
+            if thread["comments"]["pageInfo"]["hasNextPage"]:
+                return None
+            groups.append(thread["comments"]["nodes"])
+    replies = []
+    for node in (node for group in groups for node in group):
+        date = datetime.strptime(node["createdAt"], DATE_FORMAT)
+        author = graphql_user(node.get("author"))
+        if author is not None and date < starting_date:
+            replies.append((date, author))
+    return replies
+
+
+# autore GraphQL nel formato delle API REST; None per account eliminati o senza id
+def graphql_user(author: Optional[dict]) -> Optional[dict]:
+    if author is None or author.get("databaseId") is None:
+        return None
+    return {"id": author["databaseId"], "login": author["login"] + ("[bot]" if author["__typename"] == "Bot" else "")}
 
 
 def noreply_author(email: str) -> Optional[Dict]:
