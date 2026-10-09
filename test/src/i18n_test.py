@@ -146,3 +146,22 @@ def test_missing_key_falls_back_to_english(tmp_path):
     i18n.set_locales_dir(str(tmp_path))
     i18n.set_language("xx")
     assert i18n.tr("action.generate") == "Generate graph"
+
+
+def test_missing_meta_field_falls_back_to_english(tmp_path):
+    for path in LOCALE_FILES:
+        (tmp_path / os.path.basename(path)).write_text(open(path, encoding="utf-8").read(), encoding="utf-8")
+    partial = {"meta": {"name": "Parziale"}, "messages": {}}
+    (tmp_path / "xx.json").write_text(json.dumps(partial), encoding="utf-8")
+    i18n.set_locales_dir(str(tmp_path))
+    i18n.set_language("xx")
+    assert i18n.meta("date_format") == reference()["meta"]["date_format"]
+    assert i18n.format_number(5000) == "5,000"
+
+
+def test_tr_missing_placeholder_values():
+    # segnaposto non passati o con un nome diverso: il testo viene restituito senza errori
+    i18n.set_language("en")
+    text = reference()["messages"]["graph.developers"]
+    assert i18n.tr("graph.developers") == text
+    assert i18n.tr("graph.developers", other=1) == text

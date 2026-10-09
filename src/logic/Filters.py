@@ -24,7 +24,7 @@ def collaborations_in_range(start: datetime, end: datetime, files: List[File]):
         edges = []
         for file in files:
             collaborators = set()
-            for commit_date, author in file.modified_by.items():
+            for commit_date, author in file.modified_by:
                 if start <= commit_date <= end:
                     collaborators.add(author)
             if len(collaborators) > 1:
