@@ -27,12 +27,14 @@ def get_communications_since(owner: str, repo_name: str, starting_date: datetime
     if not isinstance(starting_date, datetime):
         raise TypeError("'starting_date' parameter must be datetime")
 
-    # commenti di issue e pull request, scaricati una sola volta in blocco per tutto il repository
-    issue_comments = APICalls.get_comments_by_number(owner, repo_name, "issues", starting_date,
-                                                     APICalls.build_header(token), progress, until)
-
     # elenco di issue e pull request attive nel periodo, scaricato una sola volta
     listing = APICalls.get_issue_listing(owner, repo_name, starting_date, APICalls.build_header(token), until)
+
+    # commenti di issue e pull request, scaricati una sola volta in blocco per tutto il repository; per quelle
+    # create prima di starting_date anche i commenti precedenti, a cui rispondono quelli dentro l'intervallo
+    issue_comments = APICalls.get_comments_by_number(owner, repo_name, "issues", starting_date,
+                                                     APICalls.build_header(token), progress, until,
+                                                     APICalls.created_before(listing, starting_date))
 
     # pull requests
     results = APICalls.get_pulls_since(owner, repo_name, starting_date, token, progress, issue_comments, until,
