@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor, FIRST_EXCEPTION, wait
+from concurrent.futures import ThreadPoolExecutor, FIRST_COMPLETED, wait
 from requests import HTTPError
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -85,7 +85,7 @@ def parallel_map(func: Callable, items: Iterable, progress: Progress = None, lab
         pending = set(futures)
         done_count = 0
         while pending:
-            done, pending = wait(pending, return_when=FIRST_EXCEPTION)
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
             for future in done:
                 if future.exception() is not None:
                     for other in pending:
