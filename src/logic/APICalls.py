@@ -107,10 +107,18 @@ def build_header(token: str):
     return {"Authorization": "Bearer " + token.strip()}
 
 
+# numeri delle issue/PR create prima di starting_date: i loro commenti precedenti all'intervallo servono a sapere
+# a chi risponde un commento dentro l'intervallo, ma il blocco con "since" non li include
+def created_before(items: list, starting_date: datetime) -> List[int]:
+    return [item["number"] for item in items if datetime.strptime(item["created_at"], DATE_FORMAT) < starting_date]
+
+
 # tutti i commenti del repository di un tipo ("issues" = commenti di issue e PR, "pulls" = commenti di review)
-# nell'intervallo [starting_date, until], 100 per richiesta, raggruppati per numero di issue/PR
+# nell'intervallo [starting_date, until], 100 per richiesta, raggruppati per numero di issue/PR;
+# per i numeri in earlier (create prima di starting_date) i commenti sono tutti quelli fino a until
 def get_comments_by_number(owner: str, repo_name: str, kind: str, starting_date: datetime, header: Dict[str, str],
-                           progress: Progress = None, until: Optional[datetime] = None) -> Dict[int, list]:
+                           progress: Progress = None, until: Optional[datetime] = None,
+                           earlier: Iterable[int] = ()) -> Dict[int, list]:
     url_key = "issue_url" if kind == "issues" else "pull_request_url"
     label = tr("progress.comments") if kind == "issues" else tr("progress.review_comments")
     url = (BASE_URL + owner + '/' + repo_name + '/' + kind + '/comments?per_page=100&sort=created&direction=asc'
@@ -121,6 +129,16 @@ def get_comments_by_number(owner: str, repo_name: str, kind: str, starting_date:
         number = int(comment[url_key].rsplit('/', 1)[1])
         grouped.setdefault(number, []).append(comment)
         count += 1
+
+    def all_comments(number):
+        comments = get_multiple_pages(BASE_URL + owner + '/' + repo_name + '/' + kind + '/' + str(number) +
+                                      '/comments?per_page=100', header)
+        return [c for c in comments if until is None or datetime.strptime(c["created_at"], DATE_FORMAT) <= until]
+
+    earlier = list(earlier)
+    for number, comments in zip(earlier, parallel_map(all_comments, earlier, progress, label)):
+        count += len(comments) - len(grouped.get(number, []))
+        grouped[number] = comments
     if progress is not None:
         progress(f"{label}: {count}", 0, 0)
     return grouped
@@ -143,7 +161,8 @@ def get_issues_since(owner: str, repo_name: str, starting_date: datetime, token:
     # l'endpoint delle issue restituisce anche le pull request, già gestite da get_pulls_since
     results = [issue for issue in listing if "pull_request" not in issue]
     if issue_comments is None:
-        issue_comments = get_comments_by_number(owner, repo_name, "issues", starting_date, header, progress, until)
+        issue_comments = get_comments_by_number(owner, repo_name, "issues", starting_date, header, progress, until,
+                                                created_before(results, starting_date))
 
     issues = []
     for issue in results:
@@ -168,8 +187,10 @@ def get_pulls_since(owner: str, repo_name: str, starting_date: datetime, token: 
         return []
     # commenti e commenti di review presi in blocco per tutto il repository invece che PR per PR
     if issue_comments is None:
-        issue_comments = get_comments_by_number(owner, repo_name, "issues", starting_date, header, progress, until)
-    review_comments = get_comments_by_number(owner, repo_name, "pulls", starting_date, header, progress, until)
+        issue_comments = get_comments_by_number(owner, repo_name, "issues", starting_date, header, progress, until,
+                                                created_before(results, starting_date))
+    review_comments = get_comments_by_number(owner, repo_name, "pulls", starting_date, header, progress, until,
+                                             created_before(results, starting_date))
 
     # review e commit: senza endpoint a livello di repository; con un token si chiedono con GraphQL, 50 PR per query
     activity = pull_activity(owner, repo_name, [pull["number"] for pull in results], header, progress)
