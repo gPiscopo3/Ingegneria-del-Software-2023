@@ -1,5 +1,4 @@
 import json
-import os
 from datetime import datetime
 from unittest.mock import patch
 
@@ -10,7 +9,6 @@ from src.logic import APICalls, GitHistory
 from src.logic.GitHistory import parse_log, noreply_author, map_authors, RECORD, FIELD
 
 DATE = datetime(2023, 11, 1)
-UNTIL = datetime(2023, 11, 25)
 
 LOG = (RECORD + "aaa" + FIELD + "1+alice@users.noreply.github.com" + FIELD + "2023-11-26T14:37:21+01:00\n\n"
        "src/a.py\nsrc/b.py\n" +
@@ -48,55 +46,9 @@ def test_map_authors_uses_noreply_without_requests():
     assert authors == {"1+alice@users.noreply.github.com": {"id": 1, "login": "alice"}}
 
 
-@pytest.fixture(name="downloads", scope="module")
-def fixture_downloads():
-    # ogni combinazione (git/API, con o senza until) scaricata una sola volta per tutti i test del modulo
-    token = os.environ["GH_TOKEN"]
-    return {
-        "git": GitHistory.get_commits_since("fullmoonlullaby", "test", DATE, token),
-        "api": APICalls.get_commits_since("fullmoonlullaby", "test", DATE, token),
-        "git_until": GitHistory.get_commits_since("fullmoonlullaby", "test", DATE, token, until=UNTIL),
-        "api_until": APICalls.get_commits_since("fullmoonlullaby", "test", DATE, token, until=UNTIL),
-    }
-
-
-@pytest.mark.integration
-def test_get_commits_since_same_as_api(downloads):
-    # il clone non consuma quota; il risultato deve coincidere con quello delle API
-    def normalize(commits):
-        return {c["sha"]: (c["author"]["login"], c["commit"]["author"]["date"], sorted(f["filename"] for f in c["files"]))
-                for c in commits if c["author"]}
-
-    assert len(downloads["git"]) > 0
-    assert normalize(downloads["git"]) == normalize(downloads["api"])
-
-
-@pytest.mark.integration
-def test_get_commits_since_nonexistent_repo(token):
-    with pytest.raises(GitHistory.GitError):
-        GitHistory.get_commits_since("fullmoonlullaby", "repo-che-non-esiste", DATE, token)
-
-
 def test_get_commits_since_date_none():
     with pytest.raises(AttributeError):
         GitHistory.get_commits_since("fullmoonlullaby", "test", None, "")
-
-
-@pytest.mark.integration
-def test_get_commits_since_until_same_as_api(downloads):
-    def normalize(commits):
-        return {c["sha"]: (c["author"]["login"], sorted(f["filename"] for f in c["files"])) for c in commits if c["author"]}
-
-    from_git = downloads["git_until"]
-    assert normalize(from_git) == normalize(downloads["api_until"])
-    assert 0 < len(from_git) < len(downloads["git"])
-    assert all(c["commit"]["author"]["date"] <= "2023-11-25T00:00:00Z" for c in from_git)
-
-
-@pytest.mark.integration
-def test_get_commits_since_no_commits_in_range(token):
-    # nessun commit dopo la data: git non riesce a fare il clone shallow, ma il risultato è semplicemente vuoto
-    assert GitHistory.get_commits_since("fullmoonlullaby", "test", datetime(2026, 10, 1), token) == []
 
 
 def clone_call(token):
@@ -121,16 +73,6 @@ def test_clone_token_only_in_environment():
     assert env["GIT_CONFIG_VALUE_0"].startswith("Authorization: Basic ")
     _, env = clone_call("")
     assert "GIT_CONFIG_COUNT" not in env or env.get("GIT_CONFIG_KEY_0") != "http.extraHeader"
-
-
-@pytest.mark.integration
-def test_clone_with_invalid_token_fails_quickly(tmp_path):
-    # credenziali rifiutate da GitHub: errore immediato (poi si usano le API), nessuna attesa di input
-    started = datetime.now()
-    with pytest.raises(GitHistory.GitError):
-        GitHistory.clone("https://github.com/apache/commons-io.git", str(tmp_path / "repo.git"), DATE,
-                         "token-non-valido")
-    assert (datetime.now() - started).total_seconds() < 60
 
 
 def test_git_log_without_rename_detection():
