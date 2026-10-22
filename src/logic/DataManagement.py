@@ -49,7 +49,7 @@ def get_communications_since(owner: str, repo_name: str, starting_date: datetime
         if communication_happened(issue):
             update_communications(issue, all_users, starting_date, until)
 
-    for key, user in all_users.items():  # ordina per data (discendente) le comunicazioni di ogni utente
+    for user in all_users.values():  # ordina per data (discendente) le comunicazioni di ogni utente
         user.sort_communications()
 
     return all_users  # dictionary {user_id: user}, in ogni user ci sono tutte le sue comunicazioni
@@ -74,7 +74,7 @@ def get_collaborations_since(owner: str, repo_name: str, starting_date: datetime
                     datetime.strptime(commit['commit']['author']['date'], "%Y-%m-%dT%H:%M:%SZ"),
                     collaborators[commit['author']['id']])
 
-    for sha, file in files.items():  # ordina per data (discendente) le modifiche di ogni file
+    for file in files.values():  # ordina per data (discendente) le modifiche di ogni file
         file.sort_edits()
 
     return files  # dictionary {file_id: file}, in ogni file ci sono tutte le modifiche avvenute
@@ -254,7 +254,7 @@ def activity_period(files: Optional[Dict[str, File]], users: Optional[Dict[int, 
 def communication_happened(response: List[Tuple[datetime, dict]]):
     if len(response) > 0:
         id_creator = response[0][1]['id']
-        for date, author in response:
+        for _, author in response:
             if author["id"] != id_creator:
                 return True
     return False

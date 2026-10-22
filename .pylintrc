@@ -1,0 +1,30 @@
+[MAIN]
+py-version=3.10
+
+[MESSAGES CONTROL]
+# Regole di stile disattivate di proposito; gli altri avvisi fanno fallire la CI.
+disable=
+    # righe lunghe fino a 120 caratteri: il progetto non usa il limite di 100
+    line-too-long,
+    # raggruppamento degli import non imposto
+    wrong-import-order,
+    # falsi positivi sui moduli di estensione di PyQt6
+    no-name-in-module,
+    # il codice è commentato in italiano nei punti non ovvi: docstring su ogni funzione sarebbero rumore
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    # moduli e classi del 2023 (Export.py, User.py, APICalls.py...): rinominarli rompe import e file .graphapp
+    # già salvati, che contengono i nomi delle classi nel pickle
+    invalid-name,
+    # firme e funzioni di orchestrazione dei download e della finestra principale, volutamente lineari
+    too-many-arguments,
+    # too-many-positional-arguments esiste solo da pylint 3.3: con versioni più vecchie non va segnalata come errore
+    too-many-positional-arguments,
+    unknown-option-value,
+    too-many-locals,
+    too-many-statements,
+    too-many-branches,
+    too-many-return-statements,
+    too-many-instance-attributes,
+    too-many-public-methods

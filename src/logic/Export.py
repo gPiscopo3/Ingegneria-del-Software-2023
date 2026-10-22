@@ -232,7 +232,7 @@ IMAGE_FORMATS = ("png", "svg", "pdf")
 
 def file_names(keys, prefix: str, image_format: str = "png"):
     return [prefix + suffix.format(image_format=image_format)
-            for key in EXPORT_SUFFIXES if key in keys for suffix in EXPORT_SUFFIXES[key]]
+            for key, suffixes in EXPORT_SUFFIXES.items() if key in keys for suffix in suffixes]
 
 
 # nomi creati nella cartella: un unico .zip se le modalità sono più di una, altrimenti i file singoli

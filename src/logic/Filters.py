@@ -7,9 +7,9 @@ from src.model.User import User
 
 def communications_in_range(start: datetime, end: datetime, users: List[User]):
     try:
-        adjacency_map: Dict[User, List[User]] = dict()
+        adjacency_map: Dict[User, List[User]] = {}
         for sender in users:
-            adjacency_map[sender] = list()
+            adjacency_map[sender] = []
             for date, receivers in sender.communications.items():
                 if start <= date <= end:
                     for rec in receivers:
@@ -17,6 +17,7 @@ def communications_in_range(start: datetime, end: datetime, users: List[User]):
         return adjacency_map
     except TypeError:
         print("TypeError: wrong type")
+        return None
 
 
 def collaborations_in_range(start: datetime, end: datetime, files: List[File]):
@@ -33,3 +34,4 @@ def collaborations_in_range(start: datetime, end: datetime, files: List[File]):
         return edges
     except TypeError:
         print("TypeError: wrong type")
+        return None
