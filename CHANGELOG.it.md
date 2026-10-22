@@ -51,7 +51,9 @@ Prima release pubblica. Rispetto alla versione presentata per il corso di Ingegn
   caricamento.
 
 ### Test
-- I test che chiamano GitHub sono marcati `integration` e vengono saltati se `GH_TOKEN` non è impostato; gli altri
-  girano sempre.
+- I test non usano più la rete: rimossi quelli che chiamavano GitHub dal vivo (instabili e dipendenti da un token),
+  tutti i test girano sempre con mock o con i dati di esempio.
+- CI su Python 3.10, 3.11 e 3.12, anche sulle pull request; pylint bloccante (regole in `.pylintrc`) e copertura
+  minima del 73%.
 - Asserzioni più stringenti e nuovi casi limite (rate limit, nuovi tentativi, paginazione, caricamento dei dati,
   comunicazioni).

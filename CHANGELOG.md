@@ -51,5 +51,8 @@ First public release. Compared with the version presented for the Software Engin
 - `.graphapp` data format version 2; files saved with version 1 are still read and converted on loading.
 
 ### Tests
-- Tests that call GitHub are marked `integration` and skipped when `GH_TOKEN` is not set; the others always run.
+- Tests no longer use the network: the ones that called GitHub live (unstable and dependent on a token) were
+  removed, so all tests always run with mocks or the sample data.
+- CI on Python 3.10, 3.11 and 3.12, also on pull requests; blocking pylint (rules in `.pylintrc`) and a minimum
+  coverage of 73%.
 - Stronger assertions and new edge cases (rate limits, retries, pagination, data loading, communications).
