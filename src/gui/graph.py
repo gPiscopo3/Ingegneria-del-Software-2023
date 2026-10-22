@@ -1,10 +1,16 @@
+import math
 from collections import Counter
 from typing import Dict
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
+from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
 import networkx as nx
+import numpy as np
 from datetime import datetime
+from src.gui.style import matplotlib_colors
+from src.i18n import tr
 from src.logic.DataManagement import get_collaborations_since, get_communications_since
 from src.logic.Filters import collaborations_in_range, communications_in_range
 
@@ -25,14 +31,10 @@ def create_graph(owner: str, repo_name: str, starting_date: datetime, token: str
 
     G = nx.Graph()
 
-    # print("Occorrenze delle coppie di oggetti:")
     for coppia, conteggio in conteggi_totali.items():
 
         if conteggio > 0:
             G.add_edge(coppia[0].username, coppia[1].username, weight=conteggio)
-            print(f"{coppia[0].username, coppia[1].username}: {conteggio} volte")
-
-    # Creazione di un grafo non diretto
 
     return G, files
 
@@ -49,48 +51,213 @@ def create_graph_communication(owner: str, repo_name: str, starting_date: dateti
 
         if conteggio > 0:
             G.add_edge(coppia[0].username, coppia[1].username, weight=conteggio)
-            print(f"{coppia[0].username, coppia[1].username}: {conteggio} volte")
 
     return G, all_users
 
 
+MAX_EDGE_LABELS = 150  # oltre questa soglia le etichette dei pesi renderebbero il grafo illeggibile
+LARGE_GRAPH_NODES = 150  # oltre questa soglia il grafo viene disegnato in modo alleggerito
+MAX_NODE_LABELS = 40  # nei grafi grandi, etichette solo per i nodi più collegati (gli altri al passaggio del mouse)
+MAX_ARROW_EDGES = 300  # oltre questa soglia gli archi diretti si disegnano senza frecce (una sola collezione)
+
+
+# disposizione dei nodi: con molti nodi meno iterazioni (il costo cresce col quadrato dei nodi)
+def compute_layout(G):
+    n = G.number_of_nodes()
+    if n == 0:
+        return {}
+    iterations = 50 if n <= 300 else max(15, 50 * 300 // n)
+    return nx.spring_layout(G, seed=42, k=2 / math.sqrt(n), iterations=iterations)
+
+
+# disegna il grafo su ax; usata dal widget e dall'esportazione dell'immagine, per avere lo stesso aspetto.
+# Ritorna (gradi, dimensioni dei nodi), oppure None se il grafo è vuoto
+def draw_graph(ax, G, flag: int, edge_color, colors: Dict[str, str], pos, hover_note: bool = False):
+    if G.number_of_nodes() == 0:
+        ax.text(0.5, 0.5, tr("graph.empty_interval"), ha='center', va='center',
+                color=colors["text"], fontsize=11, transform=ax.transAxes)
+        return None
+
+    # nei grafi grandi stile alleggerito, perché ogni zoom o spostamento ridisegna tutti gli elementi
+    large = G.number_of_nodes() > LARGE_GRAPH_NODES
+    degrees = dict(G.degree)
+    max_degree = max(degrees.values(), default=1)
+    if large:
+        node_sizes = [15 + 600 * math.sqrt(degrees[n] / max_degree) for n in G.nodes]
+    else:
+        node_sizes = [min(300 + 120 * degrees[n], 3000) for n in G.nodes]
+    weights = nx.get_edge_attributes(G, 'weight')
+    max_weight = max(weights.values(), default=1)
+    if large:
+        widths = [0.4 + 1.6 * weights.get(e, 1) / max_weight for e in G.edges]
+    else:
+        widths = [1 + 3 * weights.get(e, 1) / max_weight for e in G.edges]
+
+    if flag == 1:
+        edge_colors = colors["edge"]
+    elif flag == 2:
+        edge_colors = colors["communications"]
+    else:
+        palette_map = {'blue': colors["collaborations"], 'red': colors["communications"],
+                       'purple': colors["composite"]}
+        edge_colors = [palette_map.get(c, c) for c in edge_color]
+
+    edge_options = dict(ax=ax, width=widths, edge_color=edge_colors, alpha=0.35 if large else 0.75,
+                        node_size=node_sizes)
+    arrows = flag == 2 and G.number_of_edges() <= MAX_ARROW_EDGES
+    if arrows:
+        # ogni freccia è un oggetto grafico separato: solo con pochi archi
+        edge_options.update(arrows=True, arrowstyle='-|>', arrowsize=12, connectionstyle='arc3, rad = 0.08')
+    elif flag == 2:
+        edge_options.update(arrows=False)  # un'unica collezione di linee, molto più veloce da ridisegnare
+    nx.draw_networkx_edges(G, pos, **edge_options)
+    nx.draw_networkx_nodes(G, pos, ax=ax, node_size=node_sizes, node_color=colors["node"],
+                           edgecolors=colors["node_border"], linewidths=0.5 if large else 1.5)
+
+    # etichette: tutte nei grafi piccoli, solo i nodi più collegati in quelli grandi
+    labeled = list(G.nodes)
+    if large:
+        labeled = sorted(G.nodes, key=lambda n: degrees[n], reverse=True)[:MAX_NODE_LABELS]
+    label_pos = {n: (pos[n][0], pos[n][1] + 0.045) for n in labeled}  # etichette sopra i nodi
+    nx.draw_networkx_labels(G, label_pos, labels={n: n for n in labeled}, ax=ax, font_size=8,
+                            font_color=colors["text"], verticalalignment='bottom',
+                            bbox=dict(boxstyle='round,pad=0.2', fc=colors["label_bg"], ec='none', alpha=0.8))
+
+    if G.number_of_edges() <= MAX_EDGE_LABELS and flag != 3:
+        nx.draw_networkx_edge_labels(G, pos, ax=ax, edge_labels=weights, font_size=7,
+                                     font_color=colors["text"], label_pos=0.4 if flag == 2 else 0.5,
+                                     bbox=dict(boxstyle='round,pad=0.15', fc=colors["background"], ec='none'))
+
+    if flag == 3:
+        legend_labels = {tr("legend.collaborations"): colors["collaborations"],
+                         tr("legend.communications"): colors["communications"],
+                         tr("legend.both"): colors["composite"]}
+        legend_handles = [Line2D([0], [0], color=color, linewidth=3, label=label)
+                          for label, color in legend_labels.items()]
+        legend = ax.legend(handles=legend_handles, title=tr("legend.title"), loc='best',
+                           facecolor=colors["label_bg"], edgecolor=colors["label_bg"], labelcolor=colors["text"])
+        legend.get_title().set_color(colors["text"])
+
+    if large:
+        note = tr("graph.large_note", count=MAX_NODE_LABELS)
+        if flag == 2 and not arrows:
+            note += tr("graph.large_no_arrows")
+        if hover_note:
+            note += " · " + tr("graph.large_hover")
+        # sotto l'area del grafo, fuori dagli assi: non si sovrappone mai alla legenda (che resta dentro)
+        ax.text(0.0, -0.01, note, transform=ax.transAxes, fontsize=7, color=colors["text"], alpha=0.7,
+                va="top", clip_on=False)
+    return degrees, node_sizes
+
+
+# salva il grafo come immagine (formato dall'estensione: .png, .svg, .pdf), fuori dallo schermo e con la stessa
+# disposizione dei nodi mostrata nell'app; con dark=False sfondo bianco, adatto alla stampa
+def save_graph_image(path: str, G, flag: int, edge_color, pos, title: str = "", dark: bool = False,
+                     dpi: int = 300):
+    colors = dict(matplotlib_colors(dark))
+    if not dark:
+        colors.update(background="#FFFFFF", node_border="#FFFFFF")
+    if pos is None:
+        pos = compute_layout(G)
+    size = (16, 12) if G.number_of_nodes() > LARGE_GRAPH_NODES else (12, 9)
+    fig = Figure(figsize=size, facecolor=colors["background"])
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(colors["background"])
+    ax.set_axis_off()
+    draw_graph(ax, G, flag, edge_color, colors, pos)
+    if title:
+        ax.set_title(title, color=colors["text"], fontsize=12)
+    fig.tight_layout()
+    fig.savefig(path, dpi=dpi, facecolor=colors["background"])
+    fig.clear()
+
+
 class GraphWidget(QWidget):
-    def __init__(self, G, flag: int, edge_color: []):
+    # pos: disposizione già calcolata (es. al cambio tema), altrimenti viene calcolata qui
+    def __init__(self, G, flag: int, edge_color: [], dark: bool = True, pos=None):
         super().__init__()
+        self.pos = pos if pos is not None else compute_layout(G)
+        self.fig = None
+        self.canvas = None
+        self.toolbar = None
+        self.annotation = None
+        self.background = None
+        self.hover_index = None
+        self.node_names = []
+        self.node_coords = None
+        self.node_radius = None
+        self.initUI(G, flag, edge_color, dark)
 
-        self.initUI(G, flag, edge_color)
+    def initUI(self, G, flag, edge_color, dark):
+        colors = matplotlib_colors(dark)
 
-    def initUI(self, G, flag, edge_color):
         # Creazione di un layout verticale per il widget
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        # Creazione della figura per il grafo
-        fig, ax = plt.subplots()
-        canvas = FigureCanvasQTAgg(fig)
+        # Creazione della figura per il grafo (Figure e non pyplot, per non accumulare figure globali)
+        fig = self.fig = Figure(facecolor=colors["background"])
+        ax = self.ax = fig.add_subplot(111)
+        ax.set_facecolor(colors["background"])
+        ax.set_axis_off()
+        canvas = self.canvas = FigureCanvasQTAgg(fig)
+
+        # Toolbar per zoom, spostamento e salvataggio dell'immagine
+        self.toolbar = NavigationToolbar2QT(canvas, self)
+        layout.addWidget(self.toolbar)
         layout.addWidget(canvas)
 
-        labels = nx.get_edge_attributes(G, 'weight')
+        drawn = draw_graph(ax, G, flag, edge_color, colors, self.pos, hover_note=True)
+        if drawn is None:
+            return
+        degrees, node_sizes = drawn
+        self.setup_hover(G, degrees, node_sizes, colors)
+        fig.tight_layout()
 
-        # Disegno del grafo sulla figura
-        pos = nx.circular_layout(G, scale=1.0)
-        if flag == 1:
-            nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, node_color='skyblue', font_size=8)
-            nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)  # Aggiungi etichette degli archi
-        if flag == 2:
-            nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, node_color='skyblue', font_size=8,
-                    connectionstyle='arc3, rad = 0.05')
-            nx.draw_networkx_edge_labels(G, pos, edge_labels=labels, font_size=8,
-                                         label_pos=0.4)  # Aggiungi etichette degli archi
-        if flag == 3:
-            #labels = ['comunicazioni', 'collaborazioni', 'entrambe']
-            nx.draw(G, pos, with_labels=True, ax=ax, node_size=170, edge_color=edge_color, font_size=8)
-            legend_labels = ['Comunicazioni', 'Collaborazioni', 'Composito']
-            colors = {'Comunicazioni': 'red', 'Collaborazioni': 'blue', 'Composito': 'purple'}
-            legend_handles = [
-                plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[label], markersize=10, label=label)
-                for label in legend_labels]
-            plt.legend(handles=legend_handles, title="Tipi di collegamenti", loc='upper right')
-        layout.addWidget(canvas)
+    # nome del nodo al passaggio del mouse; disegnato con il blitting, senza ridisegnare tutto il grafo
+    def setup_hover(self, G, degrees, node_sizes, colors):
+        self.node_names = [f"{n}\n" + tr("graph.node_links", count=degrees[n]) for n in G.nodes]
+        self.node_coords = np.array([self.pos[n] for n in G.nodes])
+        # raggio in pixel di ogni nodo (la dimensione dei marker è un'area in punti²), almeno 6 px
+        self.node_radius = np.maximum(np.sqrt(np.array(node_sizes)) / 2 * self.fig.dpi / 72, 6)
+        self.annotation = self.ax.annotate("", xy=(0, 0), xytext=(10, 10), textcoords="offset points",
+                                           fontsize=8, color=colors["text"], zorder=10, visible=False,
+                                           bbox=dict(boxstyle='round,pad=0.3', fc=colors["label_bg"], ec='none'))
+        self.annotation.set_animated(True)  # escluso dal disegno normale: si aggiunge sopra lo sfondo salvato
+        self.canvas.mpl_connect("draw_event", self.on_draw)
+        self.canvas.mpl_connect("motion_notify_event", self.on_hover)
+
+    def on_draw(self, _event):
+        self.background = self.canvas.copy_from_bbox(self.fig.bbox)
+        self.hover_index = None
+
+    def on_hover(self, event):
+        if self.background is None or self.toolbar.mode:  # durante zoom/spostamento niente etichette
+            return
+        index = None
+        if event.inaxes is self.ax:
+            screen = self.ax.transData.transform(self.node_coords)
+            distances = np.hypot(screen[:, 0] - event.x, screen[:, 1] - event.y)
+            nearest = int(np.argmin(distances))
+            if distances[nearest] <= self.node_radius[nearest]:
+                index = nearest
+        if index == self.hover_index:
+            return
+        self.hover_index = index
+        self.canvas.restore_region(self.background)
+        if index is not None:
+            self.annotation.xy = self.node_coords[index]
+            self.annotation.set_text(self.node_names[index])
+            self.annotation.set_visible(True)
+            self.ax.draw_artist(self.annotation)
+        self.canvas.blit(self.fig.bbox)
+
+    # libera subito figura e artisti quando il widget viene sostituito
+    def release(self):
+        if self.fig is not None:
+            self.fig.clear()
+        self.background = None
 
 
 def create_composite_graph(owner: str, repo_name: str, starting_date: datetime, token: str, datai: datetime,

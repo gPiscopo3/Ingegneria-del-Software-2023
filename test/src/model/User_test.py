@@ -27,15 +27,23 @@ class TestUser:
         user = User("test_id", "test_username")
         receiver1 = User("receiver_id_1", "receiver1")
         receiver2 = User("receiver_id_2", "receiver2")
-        date1 = datetime.now()
-        date2 = datetime.now()
+        date1, date2 = datetime(2023, 12, 1), datetime(2023, 12, 2)
 
         user.update_communication(date1, {receiver1})
         user.update_communication(date2, {receiver2})
 
         user.sort_communications()
-        dates = list(user.communications.keys())
-        assert dates == sorted(dates, reverse=True)
+        assert list(user.communications.items()) == [(date2, {receiver2}), (date1, {receiver1})]
+
+    def test_update_communication_same_date_merges_receivers(self):
+        user = User("test_id", "test_username")
+        receiver1 = User("receiver_id_1", "receiver1")
+        receiver2 = User("receiver_id_2", "receiver2")
+        date = datetime(2023, 12, 1)
+
+        user.update_communication(date, {receiver1})
+        user.update_communication(date, {receiver2})
+        assert user.communications == {date: {receiver1, receiver2}}
 
     def test_print_communications(self, capsys):  # Utilizzo di capsys per catturare l'output della funzione print
         user = User("test_id", "test_username")
