@@ -142,7 +142,9 @@ Non serve installare Python:
 2. estrai l'archivio e apri `GraphApp\GraphApp.exe`.
 
 L'eseguibile non è firmato digitalmente: al primo avvio Windows SmartScreen può mostrare l'avviso «Windows
-ha protetto il PC»; scegli **Ulteriori informazioni → Esegui comunque**. Per leggere i commit dal clone
+ha protetto il PC»; scegli **Ulteriori informazioni → Esegui comunque**. Alcuni antivirus possono inoltre
+segnalare per errore gli eseguibili creati con PyInstaller (falso positivo): il codice sorgente è tutto in
+questo repository e l'eseguibile è costruito dalla CI. Per leggere i commit dal clone
 locale serve comunque **[Git](https://git-scm.com/downloads)** installato (la card Git nell'app lo indica).
 
 ## Installazione da sorgente
@@ -496,6 +498,18 @@ pyinstaller graphapp.spec --noconfirm    # -> dist/GraphApp/GraphApp.exe
 Pubblicando un tag `v*` (es. `git tag v1.0.0 && git push origin v1.0.0`) il workflow
 [`release.yml`](.github/workflows/release.yml) costruisce l'eseguibile su Windows e crea la GitHub Release
 con lo zip allegato e le note del [CHANGELOG](CHANGELOG.md) (in italiano: [CHANGELOG.it.md](CHANGELOG.it.md)).
+Dalla scheda Actions, *Run workflow* costruisce lo zip senza pubblicare la release (resta come artifact).
+
+Il workflow **compila PyInstaller dai sorgenti** (bootloader incluso) invece di usare quello precompilato:
+il bootloader precompilato è identico in ogni eseguibile PyInstaller, compreso molto malware, e Windows
+Defender lo segnala come falso positivo (minacce tipo `Trojan:Win32/Wacatac.B!ml`). L'eseguibile ha inoltre
+nome, versione e copyright nelle Proprietà → Dettagli, presi dal tag.
+
+Dopo ogni release:
+
+1. carica `GraphApp.exe` su [VirusTotal](https://www.virustotal.com);
+2. se Defender lo rileva, segnalalo su <https://www.microsoft.com/wdsi/filesubmission> (*Software developer*
+   → *Incorrectly detected as malware*) indicando il nome della minaccia: di solito risponde in 1–3 giorni.
 
 ## Limiti noti
 

@@ -138,7 +138,9 @@ No Python installation needed:
 2. extract the archive and open `GraphApp\GraphApp.exe`.
 
 The executable is not digitally signed: on first launch Windows SmartScreen may show "Windows protected your
-PC"; choose **More info → Run anyway**. Reading commits from the local clone still requires
+PC"; choose **More info → Run anyway**. Some antivirus programs may also wrongly flag executables built with
+PyInstaller (false positive): all the source code is in this repository and the executable is built by CI.
+Reading commits from the local clone still requires
 **[Git](https://git-scm.com/downloads)** to be installed (the Git card in the app tells you).
 
 ## Install from source
@@ -491,6 +493,18 @@ pyinstaller graphapp.spec --noconfirm    # -> dist/GraphApp/GraphApp.exe
 Pushing a `v*` tag (e.g. `git tag v1.0.0 && git push origin v1.0.0`) runs the
 [`release.yml`](.github/workflows/release.yml) workflow, which builds the executable on Windows and creates the
 GitHub Release with the zip attached and the notes from the [CHANGELOG](CHANGELOG.md).
+From the Actions tab, *Run workflow* builds the zip without publishing a release (it stays as an artifact).
+
+The workflow **builds PyInstaller from source** (bootloader included) instead of using the precompiled one:
+the precompiled bootloader is identical in every PyInstaller executable, malware included, and Windows
+Defender flags it as a false positive (threats like `Trojan:Win32/Wacatac.B!ml`). The executable also carries
+a name, version and copyright in Properties → Details, taken from the tag.
+
+After each release:
+
+1. upload `GraphApp.exe` to [VirusTotal](https://www.virustotal.com);
+2. if Defender detects it, report it at <https://www.microsoft.com/wdsi/filesubmission> (*Software developer*
+   → *Incorrectly detected as malware*) with the threat name: it usually answers within 1–3 days.
 
 ## Known limitations
 
