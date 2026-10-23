@@ -37,8 +37,6 @@ academic year 2023). The 2023 version was developed by:
 - [@fullmoonlullaby](https://github.com/fullmoonlullaby)
 - [@MarcoRossi1](https://github.com/MarcoRossi1)
 
-<!-- TODO (Giuseppe): one or two lines on what you did in 2023 and what you did in 2026 -->
-
 The full list is in the [project contributors](https://github.com/gPiscopo3/Ingegneria-del-Software-2023/graphs/contributors).
 
 ## How it was built

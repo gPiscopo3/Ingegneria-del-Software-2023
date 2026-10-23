@@ -37,8 +37,6 @@ Sannio, A.A. 2023). La versione del 2023 è stata sviluppata da:
 - [@fullmoonlullaby](https://github.com/fullmoonlullaby)
 - [@MarcoRossi1](https://github.com/MarcoRossi1)
 
-<!-- TODO (Giuseppe): una o due righe su cosa hai fatto nel 2023 e cosa hai fatto nel 2026 -->
-
 L'elenco completo è tra i [contributori del progetto](https://github.com/gPiscopo3/Ingegneria-del-Software-2023/graphs/contributors).
 
 ## Come è stato costruito
