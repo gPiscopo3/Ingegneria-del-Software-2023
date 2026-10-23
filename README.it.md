@@ -18,7 +18,9 @@ un'interfaccia [PyQt6](https://www.riverbankcomputing.com/software/pyqt/).
 
 > Progetto realizzato per il corso di **Ingegneria del Software** (Università degli Studi del Sannio) (A.A. 2023) e successivamente migliorato con l'utilizzo di Claude Code.
 
-![GraphApp – grafo composito, tema scuro](docs/screenshots/composito-scuro.png)
+<img src="docs/screenshots/composito-scuro.png" alt="GraphApp – grafo composito, tema scuro" width="800">
+
+![Demo](docs/gif/demo.gif)
 
 <!-- TODO: registrare una GIF di 10-15 s (Carica dati → grafo → hover/zoom → tema), salvarla come docs/demo.gif e decommentare:
 ![GraphApp in azione: dal caricamento dei dati al grafo](docs/demo.gif)

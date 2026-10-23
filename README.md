@@ -18,12 +18,9 @@ drawing it with [Matplotlib](https://matplotlib.org/) inside a
 
 > Project developed for the **Software Engineering** course (Università degli Studi del Sannio, academic year 2023) and later improved with Claude Code.
 
-![GraphApp – composite graph, dark theme](docs/screenshots/en/composite-dark.png)
+<img src="docs/screenshots/en/composite-dark.png" alt="GraphApp – composite graph, dark theme" width="800">
 
-<!-- TODO: record a 10-15 s GIF (Load data → graph → hover/zoom → theme), save it as docs/demo.gif and uncomment:
-![GraphApp demo: from loading the data to the graph](docs/demo.gif)
--->
-
+![Demo](docs/gif/demo.gif)
 ---
 
 ## Original team (2023)
