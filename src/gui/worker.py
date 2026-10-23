@@ -41,7 +41,7 @@ class DownloadWorker(QObject):
         # total == 0: messaggio senza contatore (es. "clone del repository: ricezione oggetti 45%")
         with self.lock:
             now = time.monotonic()
-            last_step = total > 0 and done == total
+            last_step = 0 < total == done
             if not last_step and now - self.last_emit < PROGRESS_INTERVAL:
                 return
             self.last_emit = now
