@@ -1,5 +1,7 @@
 import json
+import stat
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -44,6 +46,24 @@ def test_map_authors_uses_noreply_without_requests():
     with patch.object(APICalls, "get_with_ratelimit", side_effect=AssertionError("richiesta inattesa")):
         authors = map_authors("o", "r", "2023-11-01T00:00:00Z", {}, parse_log(LOG)[:1])
     assert authors == {"1+alice@users.noreply.github.com": {"id": 1, "login": "alice"}}
+
+
+def test_rmtree_removes_folder_with_readonly_files(tmp_path):
+    folder = tmp_path / "clone"
+    (folder / "objects").mkdir(parents=True)
+    readonly = folder / "objects" / "pack.idx"
+    readonly.write_text("x")
+    readonly.chmod(stat.S_IREAD)  # come i file creati da git su Windows
+    GitHistory._rmtree(str(folder))
+    assert not folder.exists()
+
+
+@pytest.mark.parametrize("version, expected", [((3, 12, 0), "onexc"), ((3, 11, 4), "onerror"), ((3, 10, 0), "onerror")])
+def test_rmtree_uses_non_deprecated_argument(version, expected):
+    with patch.object(GitHistory, "sys", SimpleNamespace(version_info=version)), \
+            patch.object(GitHistory.shutil, "rmtree") as rmtree:
+        GitHistory._rmtree("dest")
+    rmtree.assert_called_once_with("dest", **{expected: GitHistory._remove_readonly})
 
 
 def test_get_commits_since_date_none():
