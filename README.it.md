@@ -18,12 +18,47 @@ un'interfaccia [PyQt6](https://www.riverbankcomputing.com/software/pyqt/).
 
 > Progetto realizzato per il corso di **Ingegneria del Software** (Università degli Studi del Sannio) (A.A. 2023) e successivamente migliorato con l'utilizzo di Claude Code.
 
-![GraphApp – grafo composito, tema scuro](docs/screenshots/composito-scuro.png)
+<img src="docs/screenshots/composito-scuro.png" alt="GraphApp – grafo composito, tema scuro" width="800">
+
+![Demo](docs/gif/demo.gif)
+
+---
+
+## Team originale (2023)
+
+GraphApp nasce come progetto di gruppo per il corso di Ingegneria del Software (Università degli Studi del
+Sannio, A.A. 2023). La versione del 2023 è stata sviluppata da:
+
+- [@gPiscopo3](https://github.com/gPiscopo3)
+- [@TheCris94](https://github.com/TheCris94)
+- [@Rituchan](https://github.com/Rituchan)
+- [@fullmoonlullaby](https://github.com/fullmoonlullaby)
+- [@MarcoRossi1](https://github.com/MarcoRossi1)
+
+L'elenco completo è tra i [contributori del progetto](https://github.com/gPiscopo3/Ingegneria-del-Software-2023/graphs/contributors).
+
+## Come è stato costruito
+
+Il progetto è stato ripreso nel 2026 e ampliato con [Claude Code](https://claude.com/claude-code). Il lavoro
+segue le regole del file [`CLAUDE.md`](CLAUDE.md), presente nel repository:
+
+- **i test esistenti non si modificano né si cancellano per farli passare**: se un test sembra sbagliato, ci si
+  ferma e se ne discute il motivo;
+- **niente rete né hardware nei test**: si usano mock o i file in `data/examples/`;
+- **un commit per ogni modifica logica**, su un branch dedicato.
+
+Alcuni risultati misurati lungo il percorso (dettagli nel [CHANGELOG](CHANGELOG.it.md)):
+
+- commit di `apache/commons-io` in 3 mesi: **1 richiesta API invece di 107**, con risultato identico;
+- pull request di `microsoft/vscode` in 3 mesi: **~150 query GraphQL invece di ~14.800 richieste**;
+- zoom e pan su un grafo di 1.360 nodi: **~0,07 s invece di ~2,4 s**.
 
 ---
 
 ## Indice
 
+- [Team originale (2023)](#team-originale-2023)
+- [Come è stato costruito](#come-è-stato-costruito)
 - [Funzionalità](#funzionalità)
 - [I tre tipi di grafo](#i-tre-tipi-di-grafo)
 - [Screenshot](#screenshot)
@@ -201,8 +236,9 @@ Nella card **Dati** della sidebar:
   `Dati disponibili dal 15/11/2023 al 18/12/2023 · attività registrata dal 16/11/2023 al 15/12/2023`.
   Cambiando owner o nome del repository il calendario torna ai limiti normali.
 
-In [`data/examples/`](data/examples) ci sono i dati di esempio di `apache/commons-io` e
-`tensorflow/tensorflow`, da aprire con **Carica dati…** per provare l'app senza token.
+In [`data/examples/`](data/examples) ci sono i dati di esempio di `apache/commons-io`, `tensorflow/tensorflow` e
+`antirez/ds4`, da aprire con **Carica dati…** per provare l'app senza token. L'esempio molto più grande di
+`microsoft/vscode` (16 MB) è allegato alla [release](https://github.com/gPiscopo3/Ingegneria-del-Software-2023/releases).
 La barra di stato in basso mostra l'intervallo analizzato e la quota API residua.
 
 Nella toolbar sopra il grafo trovi: ripristino della vista, zoom, spostamento e salvataggio come
@@ -438,18 +474,17 @@ rete transitori (timeout, connessione interrotta) vengono ritentati automaticame
 ```bash
 pip install -r requirements-dev.txt      # dipendenze dell'app più pytest, pytest-cov e pylint
 
-# i test che chiamano le API leggono il token dalla variabile d'ambiente GH_TOKEN
-# (solo per i test: l'applicazione non la usa)
-export GH_TOKEN=<il tuo token>          # PowerShell: $env:GH_TOKEN="<il tuo token>"
+pytest test                              # esecuzione dei test (senza rete né token)
+pytest --cov=src --cov-branch --cov-report html test   # con report di copertura in htmlcov/
 
-pytest test                              # esecuzione dei test
-pytest --cov=src --cov-report html test  # con report di copertura in htmlcov/
-
-pylint --disable line-too-long --disable wrong-import-order --disable no-name-in-module ./src
+pylint src                               # analisi statica, regole in .pylintrc
 ```
 
-La pipeline di **GitHub Actions** ([`python-app.yml`](.github/workflows/python-app.yml)) esegue test,
-copertura e analisi statica con pylint a ogni push (Python 3.11 su Ubuntu).
+I test non chiamano mai GitHub: usano mock e i file di esempio in `data/examples/`.
+
+La pipeline di **GitHub Actions** ([`python-app.yml`](.github/workflows/python-app.yml)) parte a ogni push e
+pull request, su Python 3.10, 3.11 e 3.12 (Ubuntu). Fallisce se un test non passa, se pylint segnala un avviso
+o se la copertura scende sotto il 73%.
 
 ### Eseguibile e release
 

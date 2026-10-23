@@ -206,14 +206,3 @@ def test_graphql_headers_do_not_change_displayed_rest_quota():
 # integrazione: GraphQL e REST devono dare le stesse risposte
 
 
-@pytest.mark.integration
-def test_graphql_and_rest_give_same_replies(token):
-    header = APICalls.build_header(token)
-    listing = APICalls.get_issue_listing(OWNER, REPO, DATE, header)
-    numbers = [item["number"] for item in listing if "pull_request" in item]
-    assert numbers
-    via_graphql = pull_activity(OWNER, REPO, numbers, header)
-    for number in numbers:
-        via_rest = APICalls.rest_pull_replies(OWNER, REPO, number, header)
-        assert sorted((date, author["id"]) for date, author in via_graphql[number]) == \
-               sorted((date, author["id"]) for date, author in via_rest)

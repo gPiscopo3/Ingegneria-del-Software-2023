@@ -117,6 +117,17 @@ class MainViewer(QMainWindow):
         self.last_rate = None  # ultima quota nota, per ridisegnare il badge (es. al cambio di lingua)
         self.git_version = None  # versione di git trovata (None se non disponibile)
 
+        # widget creati da build_ui, che si rieseguisce a ogni cambio di lingua
+        self.language_choice = self.theme_button = None
+        self.owner = self.repo_name = None
+        self.load_button = self.save_button = self.data_status = None
+        self.token = self.show_token_button = self.verify_button = self.token_badge = self.token_link = None
+        self.git_badge = self.git_link = self.git_button = None
+        self.choice = self.choice_description = None
+        self.calendario_widget = self.update_button = None
+        self.graph_title = self.repo_chip = self.nodes_chip = self.edges_chip = self.export_button = None
+        self.graph_card = self.graph_layout = self.empty_state = None
+
         self.setWindowTitle(f'GraphApp {__version__}')
         self.resize(1280, 800)
         self.setMinimumSize(980, 640)

@@ -18,12 +18,46 @@ drawing it with [Matplotlib](https://matplotlib.org/) inside a
 
 > Project developed for the **Software Engineering** course (Università degli Studi del Sannio, academic year 2023) and later improved with Claude Code.
 
-![GraphApp – composite graph, dark theme](docs/screenshots/en/composite-dark.png)
+<img src="docs/screenshots/en/composite-dark.png" alt="GraphApp – composite graph, dark theme" width="800">
+
+![Demo](docs/gif/demo.gif)
+---
+
+## Original team (2023)
+
+GraphApp started as a group project for the Software Engineering course (Università degli Studi del Sannio,
+academic year 2023). The 2023 version was developed by:
+
+- [@gPiscopo3](https://github.com/gPiscopo3)
+- [@TheCris94](https://github.com/TheCris94)
+- [@Rituchan](https://github.com/Rituchan)
+- [@fullmoonlullaby](https://github.com/fullmoonlullaby)
+- [@MarcoRossi1](https://github.com/MarcoRossi1)
+
+The full list is in the [project contributors](https://github.com/gPiscopo3/Ingegneria-del-Software-2023/graphs/contributors).
+
+## How it was built
+
+The project was taken up again in 2026 and extended with [Claude Code](https://claude.com/claude-code). The work
+is guided by the rules in [`CLAUDE.md`](CLAUDE.md), checked into the repository:
+
+- **existing tests are never edited or deleted to make them pass**: if a test looks wrong, the work stops and
+  the reason is discussed first;
+- **no network or hardware in the tests**: they use mocks or the files in `data/examples/`;
+- **one commit per logical change**, on a dedicated branch.
+
+Some results measured along the way (details in the [CHANGELOG](CHANGELOG.md)):
+
+- commits of `apache/commons-io` over 3 months: **1 API request instead of 107**, identical result;
+- pull requests of `microsoft/vscode` over 3 months: **~150 GraphQL queries instead of ~14,800 requests**;
+- zoom and pan on a graph of 1,360 nodes: **~0.07 s instead of ~2.4 s**.
 
 ---
 
 ## Contents
 
+- [Original team (2023)](#original-team-2023)
+- [How it was built](#how-it-was-built)
 - [Features](#features)
 - [The three graph types](#the-three-graph-types)
 - [Screenshots](#screenshots)
@@ -197,8 +231,9 @@ In the **Data** card of the sidebar:
   `Data available from 2023-11-15 to 2023-12-18 · activity recorded from 2023-11-16 to 2023-12-15`.
   Changing the owner or repository name restores the normal limits.
 
-[`data/examples/`](data/examples) contains sample data for `apache/commons-io` and `tensorflow/tensorflow`,
-to open with **Load data…** and try the app without a token. The status bar at the bottom shows the analyzed
+[`data/examples/`](data/examples) contains sample data for `apache/commons-io`, `tensorflow/tensorflow` and
+`antirez/ds4`, to open with **Load data…** and try the app without a token. The much larger `microsoft/vscode`
+sample (16 MB) is attached to the [release](https://github.com/gPiscopo3/Ingegneria-del-Software-2023/releases). The status bar at the bottom shows the analyzed
 interval and the remaining API quota.
 
 The toolbar above the graph offers: reset view, zoom, pan and save as image. Hovering over a node shows the
@@ -434,18 +469,17 @@ connections) are retried automatically.
 ```bash
 pip install -r requirements-dev.txt      # app dependencies plus pytest, pytest-cov and pylint
 
-# tests that call the API read the token from the GH_TOKEN environment variable
-# (only for the tests: the application does not use it)
-export GH_TOKEN=<your token>             # PowerShell: $env:GH_TOKEN="<your token>"
+pytest test                              # run the tests (no network or token needed)
+pytest --cov=src --cov-branch --cov-report html test   # with a coverage report in htmlcov/
 
-pytest test                              # run the tests
-pytest --cov=src --cov-report html test  # with a coverage report in htmlcov/
-
-pylint --disable line-too-long --disable wrong-import-order --disable no-name-in-module ./src
+pylint src                               # static analysis, rules in .pylintrc
 ```
 
-The **GitHub Actions** pipeline ([`python-app.yml`](.github/workflows/python-app.yml)) runs tests, coverage and
-pylint static analysis on every push (Python 3.11 on Ubuntu).
+The tests never call GitHub: they use mocks and the sample files in `data/examples/`.
+
+The **GitHub Actions** pipeline ([`python-app.yml`](.github/workflows/python-app.yml)) runs on every push and
+pull request, on Python 3.10, 3.11 and 3.12 (Ubuntu). It fails if a test fails, if pylint reports a warning or
+if coverage falls below 73%.
 
 ### Executable and release
 

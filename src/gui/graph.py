@@ -102,8 +102,8 @@ def draw_graph(ax, G, flag: int, edge_color, colors: Dict[str, str], pos, hover_
                        'purple': colors["composite"]}
         edge_colors = [palette_map.get(c, c) for c in edge_color]
 
-    edge_options = dict(ax=ax, width=widths, edge_color=edge_colors, alpha=0.35 if large else 0.75,
-                        node_size=node_sizes)
+    edge_options = {"ax": ax, "width": widths, "edge_color": edge_colors, "alpha": 0.35 if large else 0.75,
+                    "node_size": node_sizes}
     arrows = flag == 2 and G.number_of_edges() <= MAX_ARROW_EDGES
     if arrows:
         # ogni freccia è un oggetto grafico separato: solo con pochi archi
@@ -121,12 +121,12 @@ def draw_graph(ax, G, flag: int, edge_color, colors: Dict[str, str], pos, hover_
     label_pos = {n: (pos[n][0], pos[n][1] + 0.045) for n in labeled}  # etichette sopra i nodi
     nx.draw_networkx_labels(G, label_pos, labels={n: n for n in labeled}, ax=ax, font_size=8,
                             font_color=colors["text"], verticalalignment='bottom',
-                            bbox=dict(boxstyle='round,pad=0.2', fc=colors["label_bg"], ec='none', alpha=0.8))
+                            bbox={"boxstyle": 'round,pad=0.2', "fc": colors["label_bg"], "ec": 'none', "alpha": 0.8})
 
     if G.number_of_edges() <= MAX_EDGE_LABELS and flag != 3:
         nx.draw_networkx_edge_labels(G, pos, ax=ax, edge_labels=weights, font_size=7,
                                      font_color=colors["text"], label_pos=0.4 if flag == 2 else 0.5,
-                                     bbox=dict(boxstyle='round,pad=0.15', fc=colors["background"], ec='none'))
+                                     bbox={"boxstyle": 'round,pad=0.15', "fc": colors["background"], "ec": 'none'})
 
     if flag == 3:
         legend_labels = {tr("legend.collaborations"): colors["collaborations"],
@@ -223,7 +223,7 @@ class GraphWidget(QWidget):
         self.node_radius = np.maximum(np.sqrt(np.array(node_sizes)) / 2 * self.fig.dpi / 72, 6)
         self.annotation = self.ax.annotate("", xy=(0, 0), xytext=(10, 10), textcoords="offset points",
                                            fontsize=8, color=colors["text"], zorder=10, visible=False,
-                                           bbox=dict(boxstyle='round,pad=0.3', fc=colors["label_bg"], ec='none'))
+                                           bbox={"boxstyle": 'round,pad=0.3', "fc": colors["label_bg"], "ec": 'none'})
         self.annotation.set_animated(True)  # escluso dal disegno normale: si aggiunge sopra lo sfondo salvato
         self.canvas.mpl_connect("draw_event", self.on_draw)
         self.canvas.mpl_connect("motion_notify_event", self.on_hover)

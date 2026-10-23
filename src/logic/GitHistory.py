@@ -4,6 +4,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 from datetime import datetime, timedelta, timezone
@@ -39,7 +40,8 @@ def refresh_path():
     # su Windows un'app già aperta non vede il PATH aggiornato dall'installer di git: lo rilegge dal registro
     if os.name != "nt":
         return
-    import winreg  # pylint: disable=import-outside-toplevel
+    # winreg esiste solo su Windows (qui si arriva solo lì): su Linux pylint non può risolverlo
+    import winreg  # pylint: disable=import-outside-toplevel,import-error
     sources = [(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
                (winreg.HKEY_CURRENT_USER, "Environment")]
     current = os.environ.get("PATH", "").split(os.pathsep)
@@ -92,7 +94,7 @@ def get_commits_since(owner: str, repo_name: str, starting_date: datetime, token
             commits = parse_log(fp.read())
         boundary = read_shallow(repo_dir)
     finally:
-        shutil.rmtree(directory, onerror=_remove_readonly)
+        _rmtree(directory)
 
     authors = map_authors(owner, repo_name, since, header, commits, progress, until)
 
@@ -265,3 +267,11 @@ def _remove_readonly(func, path, _):
     # su Windows git crea file in sola lettura che rmtree non riesce a cancellare
     os.chmod(path, stat.S_IWRITE)
     func(path)
+
+
+def _rmtree(directory: str):
+    # onerror è deprecato dalla 3.12 in favore di onexc (assente prima); il gestore ignora il terzo argomento
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(directory, onexc=_remove_readonly)  # pylint: disable=unexpected-keyword-arg
+    else:
+        shutil.rmtree(directory, onerror=_remove_readonly)  # pylint: disable=deprecated-argument
