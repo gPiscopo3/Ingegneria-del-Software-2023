@@ -22,10 +22,6 @@ un'interfaccia [PyQt6](https://www.riverbankcomputing.com/software/pyqt/).
 
 ![Demo](docs/gif/demo.gif)
 
-<!-- TODO: registrare una GIF di 10-15 s (Carica dati → grafo → hover/zoom → tema), salvarla come docs/demo.gif e decommentare:
-![GraphApp in azione: dal caricamento dei dati al grafo](docs/demo.gif)
--->
-
 ---
 
 ## Team originale (2023)
