@@ -39,7 +39,8 @@ def refresh_path():
     # su Windows un'app già aperta non vede il PATH aggiornato dall'installer di git: lo rilegge dal registro
     if os.name != "nt":
         return
-    import winreg  # pylint: disable=import-outside-toplevel
+    # winreg esiste solo su Windows (qui si arriva solo lì): su Linux pylint non può risolverlo
+    import winreg  # pylint: disable=import-outside-toplevel,import-error
     sources = [(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
                (winreg.HKEY_CURRENT_USER, "Environment")]
     current = os.environ.get("PATH", "").split(os.pathsep)
